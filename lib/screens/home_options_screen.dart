@@ -38,8 +38,7 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
   void _rotateGreeting() {
     if (!mounted) return;
     setState(() {
-      _currentGreetingIndex =
-          (_currentGreetingIndex + 1) % _greetings.length;
+      _currentGreetingIndex = (_currentGreetingIndex + 1) % _greetings.length;
     });
     Future<void>.delayed(const Duration(seconds: 3), _rotateGreeting);
   }
@@ -84,28 +83,34 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Fixed greeting animation - no layout jump
+                            // Greeting animation aligned to start (left)
                             SizedBox(
-                              height: 24, // Fixed height to prevent jump
-                              child: Center(
-                                child: AnimatedSwitcher(
-                                  duration: const Duration(milliseconds: 600),
-                                  transitionBuilder: (child, animation) {
-                                    return FadeTransition(
-                                      opacity: animation,
+                              height: 24,
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 600),
+                                transitionBuilder: (child, animation) {
+                                  return FadeTransition(
+                                    opacity: animation,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0.0, 0.2),
+                                        end: Offset.zero,
+                                      ).animate(animation),
                                       child: child,
-                                    );
-                                  },
+                                    ),
+                                  );
+                                },
+                                child: Align(
+                                  key: ValueKey(
+                                      _greetings[_currentGreetingIndex]),
+                                  alignment: Alignment.centerLeft,
                                   child: Text(
                                     _greetings[_currentGreetingIndex],
-                                    key: ValueKey(
-                                        _greetings[_currentGreetingIndex]),
                                     style: const TextStyle(
                                       color: AppColors.primaryText,
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                    textAlign: TextAlign.left,
                                   ),
                                 ),
                               ),
@@ -167,8 +172,8 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                 const SizedBox(height: 4),
                 Expanded(
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 16),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceLight,
                       borderRadius: const BorderRadius.only(
@@ -188,7 +193,10 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                       children: [
                         Text(
                           'Main Menu',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.primaryText,
                               ),
@@ -415,8 +423,6 @@ class _BookmarksStack extends StatefulWidget {
 
 class _BookmarksStackState extends State<_BookmarksStack> {
   final PageController _pageController = PageController(viewportFraction: 0.85);
-
-  // Placeholder bookmarks - replace with real data later
   final List<Map<String, dynamic>> _bookmarks = [
     {'surah': 'Al-Fatiha', 'ayah': 1},
     {'surah': 'Al-Baqarah', 'ayah': 255},
@@ -575,9 +581,7 @@ class _CardTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDisabled = onTap == null;
     return Material(
-      color: isDisabled
-          ? Colors.grey.shade100
-          : AppColors.surfaceLight,
+      color: isDisabled ? Colors.grey.shade100 : AppColors.surfaceLight,
       borderRadius: BorderRadius.circular(18),
       elevation: isDisabled ? 0 : 1,
       child: InkWell(
@@ -598,9 +602,7 @@ class _CardTile extends StatelessWidget {
                 child: Icon(
                   icon,
                   size: 26,
-                  color: isDisabled
-                      ? Colors.grey
-                      : AppColors.accentGreen,
+                  color: isDisabled ? Colors.grey : AppColors.accentGreen,
                 ),
               ),
               const SizedBox(width: 14),
@@ -632,8 +634,7 @@ class _CardTile extends StatelessWidget {
                 ),
               ),
               if (!isDisabled)
-                Icon(Icons.chevron_right_rounded,
-                    color: Colors.grey.shade500),
+                Icon(Icons.chevron_right_rounded, color: Colors.grey.shade500),
             ],
           ),
         ),

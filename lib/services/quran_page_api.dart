@@ -11,14 +11,19 @@ class QuranPageApi {
       throw ArgumentError('Page number must be between 1 and 604');
     }
 
-    final url = Uri.parse('$baseUrl/$pageNumber/quran-uthmani');
-    final response = await http.get(url);
+    try {
+      final url = Uri.parse('$baseUrl/$pageNumber/quran-uthmani');
+      final response = await http.get(url);
 
-    if (response.statusCode == 200) {
-      final json = jsonDecode(response.body) as Map<String, dynamic>;
-      return QuranPageResponse.fromJson(json);
-    } else {
-      throw Exception('Failed to load page $pageNumber: ${response.statusCode}');
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return QuranPageResponse.fromJson(json);
+      } else {
+        throw Exception(
+            'Failed to load page $pageNumber: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Failed to connect to Quran API: $e');
     }
   }
 }
@@ -46,7 +51,7 @@ class QuranPageResponse {
 class QuranPageData {
   final int number;
   final List<QuranAyahData> ayahs;
-  final QuranSurahInfo surahs;
+  final List<QuranSurahReference> surahs;
 
   QuranPageData({
     required this.number,
@@ -55,12 +60,21 @@ class QuranPageData {
   });
 
   factory QuranPageData.fromJson(Map<String, dynamic> json) {
+    // Parse Surahs map: {"1": {...}, "2": {...}} -> List<QuranSurahReference>
+    final surahsMap = json['surahs'] as Map<String, dynamic>;
+    final surahsList = surahsMap.values
+        .map((e) => QuranSurahReference.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    // Sort by surah number to ensure correct order
+    surahsList.sort((a, b) => a.number.compareTo(b.number));
+
     return QuranPageData(
       number: json['number'] as int,
       ayahs: (json['ayahs'] as List<dynamic>)
           .map((e) => QuranAyahData.fromJson(e as Map<String, dynamic>))
           .toList(),
-      surahs: QuranSurahInfo.fromJson(json['surahs'] as Map<String, dynamic>),
+      surahs: surahsList,
     );
   }
 }
@@ -103,23 +117,6 @@ class QuranAyahData {
   }
 }
 
-class QuranSurahInfo {
-  final QuranSurahReference first;
-  final QuranSurahReference last;
-
-  QuranSurahInfo({
-    required this.first,
-    required this.last,
-  });
-
-  factory QuranSurahInfo.fromJson(Map<String, dynamic> json) {
-    return QuranSurahInfo(
-      first: QuranSurahReference.fromJson(json['first'] as Map<String, dynamic>),
-      last: QuranSurahReference.fromJson(json['last'] as Map<String, dynamic>),
-    );
-  }
-}
-
 class QuranSurahReference {
   final int number;
   final String name;
@@ -148,4 +145,3 @@ class QuranSurahReference {
     );
   }
 }
-
