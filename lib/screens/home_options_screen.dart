@@ -423,9 +423,11 @@ class _BookmarksStack extends StatefulWidget {
 
 class _BookmarksStackState extends State<_BookmarksStack> {
   final PageController _pageController = PageController(viewportFraction: 0.85);
+
+  // Updated placeholder data with PAGE numbers for navigation
   final List<Map<String, dynamic>> _bookmarks = [
-    {'surah': 'Al-Fatiha', 'ayah': 1},
-    {'surah': 'Al-Baqarah', 'ayah': 255},
+    {'surah': 'Al-Fatiha', 'ayah': 1, 'page': 1},
+    {'surah': 'Al-Baqarah', 'ayah': 255, 'page': 42},
   ];
 
   @override
@@ -499,62 +501,73 @@ class _BookmarksStackState extends State<_BookmarksStack> {
           final bookmark = _bookmarks[index];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: AppColors.gold.withOpacity(0.6),
+            child: GestureDetector(
+              onTap: () {
+                // NAVIGATION LOGIC: Go to the specific page
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) =>
+                        ReadingScreen(initialPage: bookmark['page'] as int?),
+                  ),
+                );
+              },
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: AppColors.gold.withOpacity(0.6),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.gold.withOpacity(0.2),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.gold.withOpacity(0.2),
+                      ),
+                      child: Icon(
+                        Icons.bookmark_rounded,
+                        color: AppColors.gold.withOpacity(0.9),
+                        size: 22,
+                      ),
                     ),
-                    child: Icon(
-                      Icons.bookmark_rounded,
-                      color: AppColors.gold.withOpacity(0.9),
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          bookmark['surah'] as String,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primaryText,
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            bookmark['surah'] as String,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primaryText,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Ayah ${bookmark['ayah']}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.primaryText,
+                          const SizedBox(height: 2),
+                          Text(
+                            'Ayah ${bookmark['ayah']}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.primaryText,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );
