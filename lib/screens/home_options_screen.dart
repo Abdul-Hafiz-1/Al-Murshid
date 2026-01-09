@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tarteel/screens/reading_screen.dart';
 import 'package:tarteel/screens/settings_screen.dart';
 import 'package:tarteel/services/reading_progress_service.dart';
@@ -15,14 +17,11 @@ class HomeOptionsScreen extends StatefulWidget {
 class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
   final _progressService = ReadingProgressService();
   Future<int?>? _lastReadPageFuture;
+  List<Map<String, dynamic>> _bookmarks = [];
+  
   final _greetings = const [
-    'Assalamu Alaikum',
-    'Peace be upon you',
-    'Salut',
-    'Hola',
-    'Nǐ hǎo',
-    'Konnichiwa',
-    'Salam',
+    'Assalamu Alaikum', 'Peace be upon you', 'Salut', 
+    'Hola', 'Nǐ hǎo', 'Konnichiwa', 'Salam'
   ];
   int _currentGreetingIndex = 0;
 
@@ -30,9 +29,24 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
   void initState() {
     super.initState();
     _lastReadPageFuture = _progressService.loadLastReadPage();
-
-    // Cycle greetings every 3 seconds
+    _loadBookmarks();
     Future<void>.delayed(const Duration(seconds: 3), _rotateGreeting);
+  }
+  
+  // NEW: Load real bookmarks from storage
+  Future<void> _loadBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedList = prefs.getStringList('bookmarked_ayahs_list') ?? [];
+    
+    if (mounted) {
+      setState(() {
+        _bookmarks = savedList
+            .map((e) => jsonDecode(e) as Map<String, dynamic>)
+            .toList()
+            .reversed // Show newest first
+            .toList();
+      });
+    }
   }
 
   void _rotateGreeting() {
@@ -48,11 +62,17 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
       MaterialPageRoute(
         builder: (_) => ReadingScreen(initialPage: initialPage),
       ),
-    );
+    ).then((_) {
+      // Refresh bookmarks when returning from reading screen
+      _loadBookmarks();
+      setState(() {
+        _lastReadPageFuture = _progressService.loadLastReadPage();
+      });
+    });
   }
-
+  
   void _openSettings() {
-    Navigator.of(context).push(
+     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const SettingsScreen(),
       ),
@@ -68,22 +88,20 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
           value: const SystemUiOverlayStyle(
             statusBarColor: Colors.transparent,
             statusBarIconBrightness: Brightness.dark,
-            statusBarBrightness: Brightness.light,
           ),
           child: Container(
             color: AppColors.background,
             child: Column(
               children: [
+                // Header & Greeting
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
                   child: Row(
                     children: [
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Greeting animation aligned to start (left)
                             SizedBox(
                               height: 24,
                               child: AnimatedSwitcher(
@@ -101,8 +119,7 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                                   );
                                 },
                                 child: Align(
-                                  key: ValueKey(
-                                      _greetings[_currentGreetingIndex]),
+                                  key: ValueKey(_greetings[_currentGreetingIndex]),
                                   alignment: Alignment.centerLeft,
                                   child: Text(
                                     _greetings[_currentGreetingIndex],
@@ -129,17 +146,15 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                       ),
                       IconButton(
                         onPressed: _openSettings,
-                        icon: const Icon(
-                          Icons.settings_outlined,
-                          color: AppColors.primaryText,
-                        ),
+                        icon: const Icon(Icons.settings_outlined, color: AppColors.primaryText),
                       ),
                     ],
                   ),
                 ),
+
+                // Last Read Card
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: FutureBuilder<int?>(
                     future: _lastReadPageFuture,
                     builder: (context, snapshot) {
@@ -153,7 +168,6 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                           onPressed: () => _openReading(),
                         );
                       }
-
                       return _LastReadCard(
                         title: 'Where you left off',
                         subtitle: 'Page $lastPage',
@@ -164,16 +178,19 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                     },
                   ),
                 ),
+
+                // Bookmarks Section
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  child: _BookmarksStack(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: _BookmarksStack(bookmarks: _bookmarks),
                 ),
+
                 const SizedBox(height: 4),
+
+                // Main Menu
                 Expanded(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                     decoration: BoxDecoration(
                       color: AppColors.surfaceLight,
                       borderRadius: const BorderRadius.only(
@@ -193,79 +210,38 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                       children: [
                         Text(
                           'Main Menu',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.primaryText,
-                              ),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryText,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         Expanded(
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              final isWide = constraints.maxWidth > 480;
-                              return Column(
-                                children: [
-                                  _CardTile(
-                                    title: 'Read Quran',
-                                    subtitle: 'Mushaf view for focused recitation',
-                                    icon: Icons.menu_book_rounded,
-                                    onTap: () => _openReading(),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  if (isWide)
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: _CardTile(
-                                            title: 'Recitation Practice',
-                                            subtitle: 'Listen, repeat, and refine',
-                                            icon: Icons.mic_none_rounded,
-                                            onTap: () => _showComingSoon(
-                                              'Recitation practice is coming soon, in shā\' Allāh.',
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: _CardTile(
-                                            title: 'Hifz Practice',
-                                            subtitle: 'Smart repetition for memorisation',
-                                            icon: Icons.psychology_alt_outlined,
-                                            onTap: () => _showComingSoon(
-                                              'Hifz practice is coming soon, in shā\' Allāh.',
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  else
-                                    Column(
-                                      children: [
-                                        _CardTile(
-                                          title: 'Recitation Practice',
-                                          subtitle: 'Listen, repeat, and refine',
-                                          icon: Icons.mic_none_rounded,
-                                          onTap: () => _showComingSoon(
-                                            'Recitation practice is coming soon, in shā\' Allāh.',
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        _CardTile(
-                                          title: 'Hifz Practice',
-                                          subtitle: 'Smart repetition for memorisation',
-                                          icon: Icons.psychology_alt_outlined,
-                                          onTap: () => _showComingSoon(
-                                            'Hifz practice is coming soon, in shā\' Allāh.',
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                ],
-                              );
-                            },
+                          child: SingleChildScrollView(
+                            child: Column(
+                              children: [
+                                _CardTile(
+                                  title: 'Read Quran',
+                                  subtitle: 'Mushaf view for focused recitation',
+                                  icon: Icons.menu_book_rounded,
+                                  onTap: () => _openReading(),
+                                ),
+                                const SizedBox(height: 12),
+                                _CardTile(
+                                  title: 'Recitation Practice',
+                                  subtitle: 'Listen, repeat, and refine',
+                                  icon: Icons.mic_none_rounded,
+                                  onTap: () => _showComingSoon('Coming soon...'),
+                                ),
+                                const SizedBox(height: 12),
+                                _CardTile(
+                                  title: 'Hifz Practice',
+                                  subtitle: 'Smart repetition for memorisation',
+                                  icon: Icons.psychology_alt_outlined,
+                                  onTap: () => _showComingSoon('Coming soon...'),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -279,17 +255,13 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
       ),
     );
   }
-
-  void _showComingSoon(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppColors.accentGreen,
-      ),
-    );
+  
+  void _showComingSoon(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
 
+// ... _LastReadCard class (Same as before) ...
 class _LastReadCard extends StatelessWidget {
   const _LastReadCard({
     required this.title,
@@ -416,7 +388,11 @@ class _LastReadCard extends StatelessWidget {
   }
 }
 
+
 class _BookmarksStack extends StatefulWidget {
+  final List<Map<String, dynamic>> bookmarks;
+  const _BookmarksStack({required this.bookmarks});
+
   @override
   State<_BookmarksStack> createState() => _BookmarksStackState();
 }
@@ -424,30 +400,16 @@ class _BookmarksStack extends StatefulWidget {
 class _BookmarksStackState extends State<_BookmarksStack> {
   final PageController _pageController = PageController(viewportFraction: 0.85);
 
-  // Updated placeholder data with PAGE numbers for navigation
-  final List<Map<String, dynamic>> _bookmarks = [
-    {'surah': 'Al-Fatiha', 'ayah': 1, 'page': 1},
-    {'surah': 'Al-Baqarah', 'ayah': 255, 'page': 42},
-  ];
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_bookmarks.isEmpty) {
+    if (widget.bookmarks.isEmpty) {
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.8),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: AppColors.gold.withOpacity(0.6),
-          ),
+          border: Border.all(color: AppColors.gold.withOpacity(0.6)),
         ),
         child: Row(
           children: [
@@ -457,11 +419,7 @@ class _BookmarksStackState extends State<_BookmarksStack> {
                 shape: BoxShape.circle,
                 color: AppColors.gold.withOpacity(0.2),
               ),
-              child: Icon(
-                Icons.bookmarks_outlined,
-                color: AppColors.gold.withOpacity(0.9),
-                size: 22,
-              ),
+              child: Icon(Icons.bookmarks_outlined, color: AppColors.gold, size: 22),
             ),
             const SizedBox(width: 10),
             const Expanded(
@@ -470,19 +428,11 @@ class _BookmarksStackState extends State<_BookmarksStack> {
                 children: [
                   Text(
                     'Your Bookmarks',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primaryText,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.primaryText),
                   ),
-                  SizedBox(height: 2),
                   Text(
-                    'Quick access to verses you\'ve saved for hifz and review. Coming soon.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: AppColors.primaryText,
-                    ),
+                    'No bookmarks yet. Long press an ayah to save.',
+                    style: TextStyle(fontSize: 12, color: AppColors.primaryText),
                   ),
                 ],
               ),
@@ -493,78 +443,59 @@ class _BookmarksStackState extends State<_BookmarksStack> {
     }
 
     return SizedBox(
-      height: 100,
+      height: 90,
       child: PageView.builder(
         controller: _pageController,
-        itemCount: _bookmarks.length,
+        itemCount: widget.bookmarks.length,
         itemBuilder: (context, index) {
-          final bookmark = _bookmarks[index];
+          final b = widget.bookmarks[index];
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.only(right: 10),
             child: GestureDetector(
               onTap: () {
-                // NAVIGATION LOGIC: Go to the specific page
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (_) =>
-                        ReadingScreen(initialPage: bookmark['page'] as int?),
+                    builder: (_) => ReadingScreen(initialPage: b['page']),
                   ),
                 );
               },
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withOpacity(0.95),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: AppColors.gold.withOpacity(0.6),
-                  ),
+                  border: Border.all(color: AppColors.gold),
                   boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
+                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 6),
                   ],
                 ),
                 child: Row(
                   children: [
-                    Container(
+                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppColors.gold.withOpacity(0.2),
                       ),
-                      child: Icon(
-                        Icons.bookmark_rounded,
-                        color: AppColors.gold.withOpacity(0.9),
-                        size: 22,
-                      ),
+                      child: Icon(Icons.bookmark, color: AppColors.gold, size: 20),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            bookmark['surah'] as String,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primaryText,
-                            ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          b['surah'],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primaryText,
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Ayah ${bookmark['ayah']}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.primaryText,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        Text(
+                          'Ayah ${b['ayah']}',
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -577,6 +508,7 @@ class _BookmarksStackState extends State<_BookmarksStack> {
   }
 }
 
+// ... _CardTile class (Same as before) ...
 class _CardTile extends StatelessWidget {
   const _CardTile({
     required this.title,

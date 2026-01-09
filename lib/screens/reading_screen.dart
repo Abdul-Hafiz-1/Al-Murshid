@@ -1,3 +1,5 @@
+import 'dart:convert';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,85 +20,137 @@ class _ReadingScreenState extends State<ReadingScreen> {
   final _api = QuranPageApi();
   final _progressService = ReadingProgressService();
   late PageController _pageController;
-  
+
   int _currentPage = 1; // 1-604
   bool _isTranslationMode = false;
   bool _isControlsVisible = true;
-  bool _isBookmarked = false;
   
-  // Cache for surah list (for navigation)
-  List<dynamic>? _surahList;
+  // We now track bookmarked AYAHS, not just pages.
+  // Format: "page_surah_ayah" -> "4_2_255"
+  Set<String> _bookmarkedAyahs = {};
 
   @override
   void initState() {
     super.initState();
     _loadInitialState();
-    _fetchSurahList();
   }
 
   Future<void> _loadInitialState() async {
-    // 1. Load Mode
     final savedMode = await _progressService.loadReadingMode();
-    
-    // 2. Load Page
     int pageToLoad = widget.initialPage ?? 1;
+
     if (widget.initialPage == null) {
       final savedPage = await _progressService.loadLastReadPage();
       if (savedPage != null) pageToLoad = savedPage;
     }
 
-    // 3. Check Bookmark
+    // Load bookmarks
     final prefs = await SharedPreferences.getInstance();
-    final bookmarkedPages = prefs.getStringList('bookmarked_pages') ?? [];
-    final isBookmarked = bookmarkedPages.contains(pageToLoad.toString());
+    final savedBookmarks = prefs.getStringList('bookmarked_ayahs_list') ?? [];
+    // Convert JSON list to Set of IDs for quick lookup
+    final bookmarkIds = savedBookmarks.map((e) {
+      final map = jsonDecode(e);
+      return "${map['page']}_${map['surah']}_${map['ayah']}";
+    }).toSet();
 
     setState(() {
       _isTranslationMode = savedMode;
       _currentPage = pageToLoad;
-      _isBookmarked = isBookmarked;
-      // Initialize controller. Note: PageView is RTL, so index 0 is visually first?
-      // Actually with `reverse: true` or `Directionality(rtl)`, standard index logic applies.
-      // We will use standard index = page - 1
+      _bookmarkedAyahs = bookmarkIds;
       _pageController = PageController(initialPage: pageToLoad - 1);
     });
   }
 
-  Future<void> _fetchSurahList() async {
-    // Ideally fetch this from API, for now we can rely on page data or a simple list
-    // This is a placeholder for the Navigation Dialog
-  }
-
-  void _onPageChanged(int index) async {
+  void _onPageChanged(int index) {
     final newPage = index + 1;
-    
-    // Check bookmark status for new page
-    final prefs = await SharedPreferences.getInstance();
-    final bookmarkedPages = prefs.getStringList('bookmarked_pages') ?? [];
-    
     setState(() {
       _currentPage = newPage;
-      _isBookmarked = bookmarkedPages.contains(newPage.toString());
     });
-
     _progressService.saveLastReadPage(newPage);
   }
 
-  Future<void> _toggleBookmark() async {
+  Future<void> _toggleAyahBookmark(int page, String surah, int ayahNumber) async {
     final prefs = await SharedPreferences.getInstance();
-    List<String> bookmarks = prefs.getStringList('bookmarked_pages') ?? [];
-    final pageStr = _currentPage.toString();
-
+    final bookmarkId = "${page}_${surah}_$ayahNumber";
+    
+    // Get current list of objects
+    List<String> savedStrings = prefs.getStringList('bookmarked_ayahs_list') ?? [];
+    
     setState(() {
-      if (bookmarks.contains(pageStr)) {
-        bookmarks.remove(pageStr);
-        _isBookmarked = false;
+      if (_bookmarkedAyahs.contains(bookmarkId)) {
+        // Remove
+        _bookmarkedAyahs.remove(bookmarkId);
+        savedStrings.removeWhere((e) {
+           final map = jsonDecode(e);
+           return "${map['page']}_${map['surah']}_${map['ayah']}" == bookmarkId;
+        });
       } else {
-        bookmarks.add(pageStr);
-        _isBookmarked = true;
+        // Add
+        _bookmarkedAyahs.add(bookmarkId);
+        final newBookmark = jsonEncode({
+          'page': page,
+          'surah': surah,
+          'ayah': ayahNumber,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        savedStrings.add(newBookmark);
       }
     });
 
-    await prefs.setStringList('bookmarked_pages', bookmarks);
+    await prefs.setStringList('bookmarked_ayahs_list', savedStrings);
+  }
+
+  void _showAyahMenu(BuildContext context, String surah, int ayahNumber, String text) {
+    final isBookmarked = _bookmarkedAyahs.contains("${_currentPage}_${surah}_$ayahNumber");
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+             Text(
+              "$surah - Ayah $ayahNumber",
+              style: const TextStyle(
+                fontFamily: 'UthmanicHafs', 
+                fontSize: 18, 
+                fontWeight: FontWeight.bold,
+                color: AppColors.primaryText,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ListTile(
+              leading: Icon(
+                isBookmarked ? Icons.bookmark_remove_rounded : Icons.bookmark_add_rounded,
+                color: AppColors.gold,
+              ),
+              title: Text(isBookmarked ? 'Remove Bookmark' : 'Bookmark Ayah'),
+              onTap: () {
+                _toggleAyahBookmark(_currentPage, surah, ayahNumber);
+                Navigator.pop(context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy_rounded, color: AppColors.primaryText),
+              title: const Text('Copy Text'),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: text));
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Ayah copied to clipboard')),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showNavigationDialog() {
@@ -129,7 +183,6 @@ class _ReadingScreenState extends State<ReadingScreen> {
           onTap: () => setState(() => _isControlsVisible = !_isControlsVisible),
           child: Stack(
             children: [
-              // 1. The Quran Pager
               Directionality(
                 textDirection: TextDirection.rtl,
                 child: PageView.builder(
@@ -141,11 +194,16 @@ class _ReadingScreenState extends State<ReadingScreen> {
                       future: _api.getPage(index + 1),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
-                          return const Center(child: CircularProgressIndicator(color: AppColors.gold));
+                          return const Center(
+                            child: CircularProgressIndicator(color: AppColors.gold),
+                          );
                         }
                         return _MushafPage(
                           pageData: snapshot.data!.data,
                           isTranslationMode: _isTranslationMode,
+                          bookmarkedAyahs: _bookmarkedAyahs,
+                          onAyahLongPress: (surah, ayah, text) => 
+                              _showAyahMenu(context, surah, ayah, text),
                         );
                       },
                     );
@@ -153,7 +211,6 @@ class _ReadingScreenState extends State<ReadingScreen> {
                 ),
               ),
 
-              // 2. Top Controls (Back, Nav, Bookmark)
               if (_isControlsVisible)
                 Positioned(
                   top: 0,
@@ -169,19 +226,9 @@ class _ReadingScreenState extends State<ReadingScreen> {
                             icon: Icons.arrow_back_ios_new_rounded,
                             onTap: () => Navigator.pop(context),
                           ),
-                          Row(
-                            children: [
-                              _FloatingCircleButton(
-                                icon: Icons.grid_view_rounded, // Navigation Icon
-                                onTap: _showNavigationDialog,
-                              ),
-                              const SizedBox(width: 12),
-                              _FloatingCircleButton(
-                                icon: _isBookmarked ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                                color: _isBookmarked ? AppColors.gold : AppColors.primaryText,
-                                onTap: _toggleBookmark,
-                              ),
-                            ],
+                          _FloatingCircleButton(
+                            icon: Icons.grid_view_rounded,
+                            onTap: _showNavigationDialog,
                           ),
                         ],
                       ),
@@ -197,40 +244,45 @@ class _ReadingScreenState extends State<ReadingScreen> {
 }
 
 class _MushafPage extends StatelessWidget {
-  const _MushafPage({required this.pageData, required this.isTranslationMode});
+  const _MushafPage({
+    required this.pageData,
+    required this.isTranslationMode,
+    required this.onAyahLongPress,
+    required this.bookmarkedAyahs,
+  });
+
   final QuranPageData pageData;
   final bool isTranslationMode;
+  final Function(String surah, int ayah, String text) onAyahLongPress;
+  final Set<String> bookmarkedAyahs;
 
   @override
   Widget build(BuildContext context) {
-    // Logic to identify new Surahs
     final firstSurah = pageData.surahs.first;
-    // Simple check: does this page START a surah?
-    final isNewSurah = pageData.ayahs.first.numberInSurah == 1;
+    // Check if this page starts a new Surah (Ayah 1 is present)
+    final isNewSurah = pageData.ayahs.any((a) => a.numberInSurah == 1);
+    final surahName = firstSurah.name; // Simplified for page view
 
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        // InteractiveViewer allows zooming if text is too small, but starts fitted
         child: InteractiveViewer(
           minScale: 1.0,
           maxScale: 3.0,
           child: Center(
-            // FittedBox ensures NO SCROLLING, everything fits 
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.center,
               child: Container(
-                width: MediaQuery.of(context).size.width, // Constrain width
-                // We use a Column to layout Surah Headers + Text Block
+                width: MediaQuery.of(context).size.width,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (isNewSurah) ...[
-                      _SurahHeader(surahName: firstSurah.name),
+                      _SurahHeader(surahName: surahName),
                       const SizedBox(height: 10),
-                      if (firstSurah.number != 9) // No Bismillah for Tawbah
+                      if (firstSurah.number != 9)
                         const Text(
                           'بِسْمِ اللّٰهِ الرَّحْمٰنِ الرَّحِيْمِ',
                           textAlign: TextAlign.center,
@@ -238,39 +290,53 @@ class _MushafPage extends StatelessWidget {
                             fontFamily: 'UthmanicHafs',
                             fontSize: 22,
                             color: AppColors.primaryText,
+                            locale: Locale('ar', 'SA'), // FIXED: Correct shaping
                           ),
                         ),
                       const SizedBox(height: 10),
                     ],
 
-                    // The Main Text Block
                     RichText(
                       textAlign: TextAlign.justify,
                       textDirection: TextDirection.rtl,
                       text: TextSpan(
                         style: const TextStyle(
                           fontFamily: 'UthmanicHafs',
-                          fontSize: 22, // Base size, FittedBox will scale this down
-                          height: 1.8,
+                          fontSize: 22,
+                          height: 1.9, // Relaxed height for diacritics
                           color: Colors.black,
+                          locale: Locale('ar', 'SA'), // FIXED: Correct shaping
                         ),
                         children: pageData.ayahs.map((ayah) {
+                          final isBookmarked = bookmarkedAyahs.contains(
+                              "${pageData.number}_${surahName}_${ayah.numberInSurah}");
+                          
                           return TextSpan(
                             children: [
-                              TextSpan(text: ayah.text + " "),
+                              TextSpan(
+                                text: ayah.text + " ",
+                                style: isBookmarked 
+                                  ? const TextStyle(backgroundColor: Color(0xFFE8F5E9)) // Light green highlight
+                                  : null,
+                                recognizer: LongPressGestureRecognizer()
+                                  ..onLongPress = () => onAyahLongPress(
+                                        surahName, 
+                                        ayah.numberInSurah, 
+                                        ayah.text
+                                      ),
+                              ),
                               WidgetSpan(
                                 alignment: PlaceholderAlignment.middle,
                                 child: _AyahEndSymbol(number: ayah.numberInSurah),
                               ),
-                              const TextSpan(text: "  "), // Space after ayah
+                              const TextSpan(text: "  "),
                             ],
                           );
                         }).toList(),
                       ),
                     ),
-                    
+
                     const SizedBox(height: 20),
-                    // Page Number Footer
                     Text(
                       '${pageData.number}',
                       textAlign: TextAlign.center,
@@ -294,7 +360,6 @@ class _AyahEndSymbol extends StatelessWidget {
   final int number;
   const _AyahEndSymbol({required this.number});
 
-  // Convert English numbers to Arabic
   String _toArabic(int num) {
     const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
     return num.toString().split('').map((d) => arabicDigits[int.parse(d)]).join();
@@ -303,31 +368,32 @@ class _AyahEndSymbol extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 34, 
-      height: 34,
+      width: 38, // Slightly wider to fit circle
+      height: 38,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // The Symbol
           const Text(
-            '\u06DD', // U+06DD
+            '\u06DD',
             style: TextStyle(
               fontFamily: 'UthmanicHafs',
-              fontSize: 32, 
+              fontSize: 34,
               color: AppColors.gold,
-              height: 1.0, // Critical to prevent clipping
+              height: 1.1, // Fixed height prevents clipping
+              locale: Locale('ar', 'SA'),
             ),
           ),
-          // The Number
           Padding(
-            padding: const EdgeInsets.only(top: 2), // Slight adjustment
+             // Fine-tune this padding to move number up/down
+            padding: const EdgeInsets.only(top: 2), 
             child: Text(
               _toArabic(number),
               style: const TextStyle(
                 fontFamily: 'UthmanicHafs',
-                fontSize: 12, // Small enough to fit
+                fontSize: 11,
                 fontWeight: FontWeight.bold,
                 color: Colors.black,
+                height: 1.0,
               ),
             ),
           ),
@@ -347,7 +413,7 @@ class _SurahHeader extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFE6E0C6), // Decorative header color
+        color: const Color(0xFFE6E0C6),
         border: Border.symmetric(
           horizontal: BorderSide(color: AppColors.gold, width: 2),
         ),
@@ -369,13 +435,8 @@ class _SurahHeader extends StatelessWidget {
 class _FloatingCircleButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
-  final Color color;
 
-  const _FloatingCircleButton({
-    required this.icon,
-    required this.onTap,
-    this.color = AppColors.primaryText,
-  });
+  const _FloatingCircleButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -387,27 +448,21 @@ class _FloatingCircleButton extends StatelessWidget {
           color: AppColors.background.withOpacity(0.9),
           shape: BoxShape.circle,
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 4,
-            ),
+            BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4),
           ],
         ),
-        child: Icon(icon, color: color, size: 24),
+        child: Icon(icon, color: AppColors.primaryText, size: 24),
       ),
     );
   }
 }
 
-// Simple Navigation Sheet
 class _NavigationSheet extends StatelessWidget {
   final Function(int) onPageSelected;
   const _NavigationSheet({required this.onPageSelected});
 
   @override
   Widget build(BuildContext context) {
-    // For prototype, we generate 30 Juz. 
-    // In production, use a full Surah list JSON.
     return Container(
       height: MediaQuery.of(context).size.height * 0.7,
       padding: const EdgeInsets.all(20),
@@ -426,8 +481,8 @@ class _NavigationSheet extends StatelessWidget {
               itemCount: 30,
               itemBuilder: (context, index) {
                 final juz = index + 1;
-                // Approximate page start for each Juz (Simplified logic)
-                final startPage = (juz - 1) * 20 + 2; 
+                // Approximate calculation: Juz 1=Pg2, Juz 2=Pg22, etc.
+                final startPage = ((juz - 1) * 20) + 2; 
                 return InkWell(
                   onTap: () => onPageSelected(startPage > 604 ? 604 : startPage),
                   child: Container(
