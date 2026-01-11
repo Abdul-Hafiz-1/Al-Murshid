@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tarteel/screens/splash_screen.dart';
 import 'package:tarteel/theme/app_theme.dart';
 
@@ -13,7 +14,11 @@ void main() {
       statusBarBrightness: Brightness.light,
     ),
   );
-  runApp(const AlMurshidApp());
+  runApp(
+    const ProviderScope( // Add this wrapper
+      child: AlMurshidApp(),
+    ),
+  );
 }
 
 class AlMurshidApp extends StatelessWidget {
