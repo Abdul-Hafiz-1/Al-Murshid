@@ -2,15 +2,31 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class QuranPageApi {
-  static const String _baseUrl = 'http://api.alquran.cloud/v1/page';
+  // CHANGED TO HTTPS to fix Android blocking requests
+  static const String _baseUrl = 'https://api.alquran.cloud/v1/page';
+  static const String _ayahBaseUrl = 'https://api.alquran.cloud/v1/ayah';
 
   Future<QuranPageResponse> getPage(int pageNumber) async {
     return _fetchPage(pageNumber, 'quran-uthmani');
   }
 
   Future<QuranPageResponse> getTranslationPage(int pageNumber) async {
-    // 'en.ahmedraza' is the specific identifier for Kanz-ul-Iman
     return _fetchPage(pageNumber, 'en.ahmedraza');
+  }
+
+  // NEW: Fetch Audio URL (Mishary Al-Afasy)
+  Future<String?> getAyahAudioUrl(int surahNumber, int ayahNumber) async {
+    final url = Uri.parse('$_ayahBaseUrl/$surahNumber:$ayahNumber/ar.alafasy');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final json = jsonDecode(response.body);
+        return json['data']['audio']; // Returns the MP3 URL
+      }
+    } catch (e) {
+      print("Audio Fetch Error: $e");
+    }
+    return null;
   }
 
   Future<QuranPageResponse> _fetchPage(int pageNumber, String edition) async {
@@ -28,6 +44,8 @@ class QuranPageApi {
   }
 }
 
+// ... Keep existing Models (QuranPageResponse, QuranPageData, etc.) ...
+// Ensure QuranAyah has the 'surahNumber' field as defined in previous steps.
 class QuranPageResponse {
   final QuranPageData data;
   QuranPageResponse({required this.data});
@@ -39,9 +57,7 @@ class QuranPageResponse {
 class QuranPageData {
   final int number;
   final List<QuranAyah> ayahs;
-
   QuranPageData({required this.number, required this.ayahs});
-
   factory QuranPageData.fromJson(Map<String, dynamic> json) {
     return QuranPageData(
       number: json['number'],
