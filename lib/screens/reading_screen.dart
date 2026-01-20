@@ -6,6 +6,11 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:quran/quran.dart' as quran;
+
+// 👇 IMPORT YOUR DATA FILE HERE
+import 'package:tarteel/data/quran_data.dart';
 import 'package:tarteel/services/quran_page_api.dart';
 import 'package:tarteel/services/reading_progress_service.dart';
 import 'package:tarteel/theme/app_theme.dart';
@@ -21,144 +26,42 @@ class ReadingScreen extends StatefulWidget {
 class _ReadingScreenState extends State<ReadingScreen> {
   final _progressService = ReadingProgressService();
   final _api = QuranPageApi();
-  late PageController _pageController;
+  
+  // --- CONTROLLERS ---
+  // Controls the Mushaf PageView (Pages 1-604)
+  late PageController _mushafController; 
+  // Controls the Translation PageView (Surahs 1-114)
+  late PageController _translationController;
+  // Generic reference to whichever controller is active
+  late PageController _pageController; 
+  
   final AudioPlayer _audioPlayer = AudioPlayer();
   
-  // --- STATE ---
-  int _currentPageIndex = 0;
+  // --- STATE VARIABLES ---
+  int _currentPageIndex = 0; // Index 0 = Page 1
+  int _currentSurahIndex = 0; // Index 0 = Surah 1
+  
+  // SYNC VARIABLES
+  // When switching to Translation, which Ayah number should we scroll to?
+  int _targetAyahToScroll = 1; 
+  // When scrolling Translation, which Ayah is currently at the top?
+  int _currentVisibleAyahInTranslation = 1; 
+  
   bool _isTranslationMode = false;
   bool _areControlsVisible = true;
   Timer? _hideTimer;
   List<String> _bookmarkedAyahs = [];
 
-  // Audio State
+  // AUDIO STATE
   PlayerState _playerState = PlayerState.stopped;
   bool _isAudioLoading = false;
   int? _playingSurah;
   int? _playingAyah;
   
-  // Streams
   StreamSubscription? _playerCompleteSubscription;
   StreamSubscription? _playerStateSubscription;
 
-  // --- DATA ---
-  final List<Map<String, dynamic>> _allSurahs = [
-    {"number": 1, "name": "Al-Fatiha", "english": "The Opening", "page": 1, "ayahs": 7},
-    {"number": 2, "name": "Al-Baqarah", "english": "The Cow", "page": 2, "ayahs": 286},
-    {"number": 3, "name": "Ali 'Imran", "english": "Family of Imran", "page": 50, "ayahs": 200},
-    {"number": 4, "name": "An-Nisa", "english": "The Women", "page": 77, "ayahs": 176},
-    {"number": 5, "name": "Al-Ma'idah", "english": "The Table Spread", "page": 106, "ayahs": 120},
-    {"number": 6, "name": "Al-An'am", "english": "The Cattle", "page": 128, "ayahs": 165},
-    {"number": 7, "name": "Al-A'raf", "english": "The Heights", "page": 151, "ayahs": 206},
-    {"number": 8, "name": "Al-Anfal", "english": "The Spoils of War", "page": 177, "ayahs": 75},
-    {"number": 9, "name": "At-Tawbah", "english": "The Repentance", "page": 187, "ayahs": 129},
-    {"number": 10, "name": "Yunus", "english": "Jonah", "page": 208, "ayahs": 109},
-    {"number": 11, "name": "Hud", "english": "Hud", "page": 221, "ayahs": 123},
-    {"number": 12, "name": "Yusuf", "english": "Joseph", "page": 235, "ayahs": 111},
-    {"number": 13, "name": "Ar-Ra'd", "english": "The Thunder", "page": 249, "ayahs": 43},
-    {"number": 14, "name": "Ibrahim", "english": "Abraham", "page": 255, "ayahs": 52},
-    {"number": 15, "name": "Al-Hijr", "english": "The Rocky Tract", "page": 262, "ayahs": 99},
-    {"number": 16, "name": "An-Nahl", "english": "The Bee", "page": 267, "ayahs": 128},
-    {"number": 17, "name": "Al-Isra", "english": "The Night Journey", "page": 282, "ayahs": 111},
-    {"number": 18, "name": "Al-Kahf", "english": "The Cave", "page": 293, "ayahs": 110},
-    {"number": 19, "name": "Maryam", "english": "Mary", "page": 305, "ayahs": 98},
-    {"number": 20, "name": "Ta-Ha", "english": "Ta-Ha", "page": 312, "ayahs": 135},
-    {"number": 21, "name": "Al-Anbiya", "english": "The Prophets", "page": 322, "ayahs": 112},
-    {"number": 22, "name": "Al-Hajj", "english": "The Pilgrimage", "page": 332, "ayahs": 78},
-    {"number": 23, "name": "Al-Mu'minun", "english": "The Believers", "page": 342, "ayahs": 118},
-    {"number": 24, "name": "An-Nur", "english": "The Light", "page": 350, "ayahs": 64},
-    {"number": 25, "name": "Al-Furqan", "english": "The Criterian", "page": 359, "ayahs": 77},
-    {"number": 26, "name": "Ash-Shu'ara", "english": "The Poets", "page": 367, "ayahs": 227},
-    {"number": 27, "name": "An-Naml", "english": "The Ant", "page": 377, "ayahs": 93},
-    {"number": 28, "name": "Al-Qasas", "english": "The Stories", "page": 385, "ayahs": 88},
-    {"number": 29, "name": "Al-Ankabut", "english": "The Spider", "page": 396, "ayahs": 69},
-    {"number": 30, "name": "Ar-Rum", "english": "The Romans", "page": 404, "ayahs": 60},
-    {"number": 31, "name": "Luqman", "english": "Luqman", "page": 411, "ayahs": 34},
-    {"number": 32, "name": "As-Sajdah", "english": "The Prostration", "page": 415, "ayahs": 30},
-    {"number": 33, "name": "Al-Ahzab", "english": "The Combined Forces", "page": 418, "ayahs": 73},
-    {"number": 34, "name": "Saba", "english": "Sheba", "page": 428, "ayahs": 54},
-    {"number": 35, "name": "Fatir", "english": "Originator", "page": 434, "ayahs": 45},
-    {"number": 36, "name": "Ya-Sin", "english": "Ya Sin", "page": 440, "ayahs": 83},
-    {"number": 37, "name": "As-Saffat", "english": "Those who set the Ranks", "page": 446, "ayahs": 182},
-    {"number": 38, "name": "Sad", "english": "The Letter \"Saad\"", "page": 453, "ayahs": 88},
-    {"number": 39, "name": "Az-Zumar", "english": "The Troops", "page": 458, "ayahs": 75},
-    {"number": 40, "name": "Ghafir", "english": "The Forgiver", "page": 467, "ayahs": 85},
-    {"number": 41, "name": "Fussilat", "english": "Explained in Detail", "page": 477, "ayahs": 54},
-    {"number": 42, "name": "Ash-Shura", "english": "The Consultation", "page": 483, "ayahs": 53},
-    {"number": 43, "name": "Az-Zukhruf", "english": "The Ornaments of Gold", "page": 489, "ayahs": 89},
-    {"number": 44, "name": "Ad-Dukhan", "english": "The Smoke", "page": 496, "ayahs": 59},
-    {"number": 45, "name": "Al-Jathiyah", "english": "The Crouching", "page": 499, "ayahs": 37},
-    {"number": 46, "name": "Al-Ahqaf", "english": "The Wind-Curved Sandhills", "page": 502, "ayahs": 35},
-    {"number": 47, "name": "Muhammad", "english": "Muhammad", "page": 507, "ayahs": 38},
-    {"number": 48, "name": "Al-Fath", "english": "The Victory", "page": 511, "ayahs": 29},
-    {"number": 49, "name": "Al-Hujurat", "english": "The Rooms", "page": 515, "ayahs": 18},
-    {"number": 50, "name": "Qaf", "english": "The Letter \"Qaf\"", "page": 518, "ayahs": 45},
-    {"number": 51, "name": "Ad-Dhariyat", "english": "The Winnowing Winds", "page": 520, "ayahs": 60},
-    {"number": 52, "name": "At-Tur", "english": "The Mount", "page": 523, "ayahs": 49},
-    {"number": 53, "name": "An-Najm", "english": "The Star", "page": 526, "ayahs": 62},
-    {"number": 54, "name": "Al-Qamar", "english": "The Moon", "page": 528, "ayahs": 55},
-    {"number": 55, "name": "Ar-Rahman", "english": "The Beneficent", "page": 531, "ayahs": 78},
-    {"number": 56, "name": "Al-Waqi'ah", "english": "The Inevitable", "page": 534, "ayahs": 96},
-    {"number": 57, "name": "Al-Hadid", "english": "The Iron", "page": 537, "ayahs": 29},
-    {"number": 58, "name": "Al-Mujadila", "english": "The Pleading Woman", "page": 542, "ayahs": 22},
-    {"number": 59, "name": "Al-Hashr", "english": "The Exile", "page": 545, "ayahs": 24},
-    {"number": 60, "name": "Al-Mumtahanah", "english": "She that is to be examined", "page": 549, "ayahs": 13},
-    {"number": 61, "name": "As-Saff", "english": "The Ranks", "page": 551, "ayahs": 14},
-    {"number": 62, "name": "Al-Jumu'ah", "english": "The Congregation, Friday", "page": 553, "ayahs": 11},
-    {"number": 63, "name": "Al-Munafiqun", "english": "The Hypocrites", "page": 554, "ayahs": 11},
-    {"number": 64, "name": "At-Taghabun", "english": "The Mutual Disillusion", "page": 556, "ayahs": 18},
-    {"number": 65, "name": "At-Talaq", "english": "The Divorce", "page": 558, "ayahs": 12},
-    {"number": 66, "name": "At-Tahrim", "english": "The Prohibition", "page": 560, "ayahs": 12},
-    {"number": 67, "name": "Al-Mulk", "english": "The Sovereignty", "page": 562, "ayahs": 30},
-    {"number": 68, "name": "Al-Qalam", "english": "The Pen", "page": 564, "ayahs": 52},
-    {"number": 69, "name": "Al-Haqqah", "english": "The Reality", "page": 566, "ayahs": 52},
-    {"number": 70, "name": "Al-Ma'arij", "english": "The Ascending Stairways", "page": 568, "ayahs": 44},
-    {"number": 71, "name": "Nuh", "english": "Noah", "page": 570, "ayahs": 28},
-    {"number": 72, "name": "Al-Jinn", "english": "The Jinn", "page": 572, "ayahs": 28},
-    {"number": 73, "name": "Al-Muzzammil", "english": "The Enshrouded One", "page": 574, "ayahs": 20},
-    {"number": 74, "name": "Al-Muddaththir", "english": "The Cloaked One", "page": 575, "ayahs": 56},
-    {"number": 75, "name": "Al-Qiyamah", "english": "The Resurrection", "page": 577, "ayahs": 40},
-    {"number": 76, "name": "Al-Insan", "english": "The Man", "page": 578, "ayahs": 31},
-    {"number": 77, "name": "Al-Mursalat", "english": "The Emissaries", "page": 580, "ayahs": 50},
-    {"number": 78, "name": "An-Naba", "english": "The Tidings", "page": 582, "ayahs": 40},
-    {"number": 79, "name": "An-Nazi'at", "english": "Those who drag forth", "page": 583, "ayahs": 46},
-    {"number": 80, "name": "Abasa", "english": "He Frowned", "page": 585, "ayahs": 42},
-    {"number": 81, "name": "At-Takwir", "english": "The Overthrowing", "page": 586, "ayahs": 29},
-    {"number": 82, "name": "Al-Infitar", "english": "The Cleaving", "page": 587, "ayahs": 19},
-    {"number": 83, "name": "Al-Mutaffifin", "english": "The Defrauding", "page": 587, "ayahs": 36},
-    {"number": 84, "name": "Al-Inshiqaq", "english": "The Sundering", "page": 589, "ayahs": 25},
-    {"number": 85, "name": "Al-Buruj", "english": "The Mansions of the Stars", "page": 590, "ayahs": 22},
-    {"number": 86, "name": "At-Tariq", "english": "The Morning Star", "page": 591, "ayahs": 17},
-    {"number": 87, "name": "Al-A'la", "english": "The Most High", "page": 591, "ayahs": 19},
-    {"number": 88, "name": "Al-Ghashiyah", "english": "The Overwhelming", "page": 592, "ayahs": 26},
-    {"number": 89, "name": "Al-Fajr", "english": "The Dawn", "page": 593, "ayahs": 30},
-    {"number": 90, "name": "Al-Balad", "english": "The City", "page": 594, "ayahs": 20},
-    {"number": 91, "name": "Ash-Shams", "english": "The Sun", "page": 595, "ayahs": 15},
-    {"number": 92, "name": "Al-Layl", "english": "The Night", "page": 595, "ayahs": 21},
-    {"number": 93, "name": "Ad-Duha", "english": "The Morning Hours", "page": 596, "ayahs": 11},
-    {"number": 94, "name": "Ash-Sharh", "english": "The Relief", "page": 596, "ayahs": 8},
-    {"number": 95, "name": "At-Tin", "english": "The Fig", "page": 597, "ayahs": 8},
-    {"number": 96, "name": "Al-'Alaq", "english": "The Clot", "page": 597, "ayahs": 19},
-    {"number": 97, "name": "Al-Qadr", "english": "The Power", "page": 598, "ayahs": 5},
-    {"number": 98, "name": "Al-Bayyinah", "english": "The Clear Proof", "page": 598, "ayahs": 8},
-    {"number": 99, "name": "Az-Zalzalah", "english": "The Earthquake", "page": 599, "ayahs": 8},
-    {"number": 100, "name": "Al-'Adiyat", "english": "The Courser", "page": 599, "ayahs": 11},
-    {"number": 101, "name": "Al-Qari'ah", "english": "The Calamity", "page": 600, "ayahs": 11},
-    {"number": 102, "name": "At-Takathur", "english": "The Rivalry in world increase", "page": 600, "ayahs": 8},
-    {"number": 103, "name": "Al-'Asr", "english": "The Declining Day", "page": 601, "ayahs": 3},
-    {"number": 104, "name": "Al-Humazah", "english": "The Traducer", "page": 601, "ayahs": 9},
-    {"number": 105, "name": "Al-Fil", "english": "The Elephant", "page": 601, "ayahs": 5},
-    {"number": 106, "name": "Quraysh", "english": "Quraysh", "page": 602, "ayahs": 4},
-    {"number": 107, "name": "Al-Ma'un", "english": "The Small Kindnesses", "page": 602, "ayahs": 7},
-    {"number": 108, "name": "Al-Kawthar", "english": "The Abundance", "page": 602, "ayahs": 3},
-    {"number": 109, "name": "Al-Kafirun", "english": "The Disbelievers", "page": 603, "ayahs": 6},
-    {"number": 110, "name": "An-Nasr", "english": "The Divine Support", "page": 603, "ayahs": 3},
-    {"number": 111, "name": "Al-Masad", "english": "The Palm Fiber", "page": 603, "ayahs": 5},
-    {"number": 112, "name": "Al-Ikhlas", "english": "The Sincerity", "page": 604, "ayahs": 4},
-    {"number": 113, "name": "Al-Falaq", "english": "The Daybreak", "page": 604, "ayahs": 5},
-    {"number": 114, "name": "An-Nas", "english": "Mankind", "page": 604, "ayahs": 6}
-  ];
-
+  // JUZ NAVIGATION DATA
   final List<int> _juzList = List.generate(30, (index) => index + 1);
 
   @override
@@ -170,15 +73,12 @@ class _ReadingScreenState extends State<ReadingScreen> {
     _setupAudio();
   }
 
-  // Split initialization to be cleaner and async-aware
   Future<void> _setupAudio() async {
-    // 1. CONFIGURE AUDIO CONTEXT
-    // CRITICAL: Empty Set for iOS 'options' to avoid assertion crash
-    // CRITICAL: stayAwake: true for Android background playback
-    await _audioPlayer.setAudioContext(AudioContext(
+    // Background Playback Configuration
+    final audioContext = AudioContext(
       iOS: AudioContextIOS(
         category: AVAudioSessionCategory.playback,
-        options: const {}, 
+        options: const {}, // Empty to prevent crash
       ),
       android: AudioContextAndroid(
         isSpeakerphoneOn: true,
@@ -187,16 +87,15 @@ class _ReadingScreenState extends State<ReadingScreen> {
         usageType: AndroidUsageType.media,
         audioFocus: AndroidAudioFocus.gain,
       ),
-    ));
+    );
+    await AudioPlayer.global.setAudioContext(audioContext);
 
-    // 2. SYNC PLAYER STATE
+    // Listen to state changes (playing, paused, stopped)
     _playerStateSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
-      if (mounted) {
-        setState(() => _playerState = state);
-      }
+      if (mounted) setState(() => _playerState = state);
     });
 
-    // 3. CONTINUOUS PLAYBACK
+    // Listen for when an Ayah finishes to play the next one
     _playerCompleteSubscription = _audioPlayer.onPlayerComplete.listen((event) {
       _playNextAyah();
     });
@@ -204,7 +103,10 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
+    // Dispose controllers if they were initialized
+    try { _mushafController.dispose(); } catch(e) {}
+    try { _translationController.dispose(); } catch(e) {}
+    
     _hideTimer?.cancel();
     _playerCompleteSubscription?.cancel();
     _playerStateSubscription?.cancel();
@@ -215,6 +117,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 5), () {
+      // Only hide controls if audio is NOT playing
       if (mounted && _playerState != PlayerState.playing) {
         setState(() => _areControlsVisible = false);
       }
@@ -235,11 +138,28 @@ class _ReadingScreenState extends State<ReadingScreen> {
       if (savedPage != null) initialPage = savedPage;
     }
 
-    setState(() {
-      _isTranslationMode = savedMode;
-      _currentPageIndex = initialPage - 1;
-      _pageController = PageController(initialPage: _currentPageIndex);
-    });
+    _currentPageIndex = initialPage - 1;
+    _isTranslationMode = savedMode;
+
+    if (_isTranslationMode) {
+      // If starting in Translation Mode, calculate sync data
+      // Use 'quran' package to find which Surah is on this Page
+      var pageData = quran.getPageData(initialPage);
+      int surahNum = pageData[0]['surah'];
+      int startAyah = pageData[0]['start'];
+
+      _currentSurahIndex = surahNum - 1;
+      _targetAyahToScroll = startAyah;
+      
+      _translationController = PageController(initialPage: _currentSurahIndex);
+      _pageController = _translationController;
+    } else {
+      // If starting in Mushaf Mode
+      _mushafController = PageController(initialPage: _currentPageIndex);
+      _pageController = _mushafController;
+    }
+    
+    setState(() {});
   }
 
   Future<void> _loadBookmarks() async {
@@ -254,13 +174,57 @@ class _ReadingScreenState extends State<ReadingScreen> {
   }
 
   void _onPageChanged(int index) {
-    setState(() => _currentPageIndex = index);
-    _progressService.saveLastReadPage(index + 1);
+    if (_isTranslationMode) {
+      // User swiped horizontally in Translation Mode (Changed Surah)
+      setState(() => _currentSurahIndex = index);
+      // Save progress: we save the first page of this Surah
+      int page = quran.getPageNumber(index + 1, 1);
+      _progressService.saveLastReadPage(page);
+    } else {
+      // User swiped horizontally in Mushaf Mode (Changed Page)
+      setState(() => _currentPageIndex = index);
+      _progressService.saveLastReadPage(index + 1);
+    }
   }
 
   void _toggleTranslationMode() {
-    setState(() => _isTranslationMode = !_isTranslationMode);
-    _progressService.saveReadingMode(_isTranslationMode);
+    setState(() {
+      if (_isTranslationMode) {
+        // --- SWITCHING: TRANSLATION -> MUSHAF ---
+        // 1. Where was the user reading?
+        int currentSurah = _currentSurahIndex + 1;
+        int currentAyah = _currentVisibleAyahInTranslation; 
+        
+        // 2. Calculate the exact Page Number for this Ayah
+        int targetPage = quran.getPageNumber(currentSurah, currentAyah);
+        
+        // 3. Initialize Mushaf Controller to this page
+        _currentPageIndex = targetPage - 1;
+        _mushafController = PageController(initialPage: _currentPageIndex);
+        _pageController = _mushafController;
+        _isTranslationMode = false;
+        
+      } else {
+        // --- SWITCHING: MUSHAF -> TRANSLATION ---
+        // 1. What is the current page?
+        int currentPage = _currentPageIndex + 1;
+        
+        // 2. Get the first Ayah on this page
+        var pageData = quran.getPageData(currentPage);
+        // pageData returns a list of Surahs on this page. We take the first one.
+        int targetSurah = pageData[0]['surah'];
+        int targetAyah = pageData[0]['start'];
+        
+        _currentSurahIndex = targetSurah - 1;
+        _targetAyahToScroll = targetAyah; // Important: tells the view where to scroll
+        
+        // 3. Initialize Translation Controller to this Surah
+        _translationController = PageController(initialPage: _currentSurahIndex);
+        _pageController = _translationController;
+        _isTranslationMode = true;
+      }
+      _progressService.saveReadingMode(_isTranslationMode);
+    });
     _startHideTimer();
   }
 
@@ -271,19 +235,37 @@ class _ReadingScreenState extends State<ReadingScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => _NavigationSheet(
-        surahList: _allSurahs,
+        // Pass the list from your Data File
+        surahList: QuranData.allSurahs, 
         juzList: _juzList,
-        onPageSelected: (page) {
+        onPageSelected: (pageOrSurahInfo) {
           Navigator.pop(context);
-          _pageController.jumpToPage(page - 1);
+          if (_isTranslationMode) {
+             // Logic: If in Translation mode, we need to know which Surah the user picked
+             // NOTE: QuranData.allSurahs has 'page' info.
+             // If user picked a Surah via search, calculate the Surah Index.
+             // If input is just a Page Number (from Juz list), calculate Surah.
+             
+             int page = pageOrSurahInfo; // Assumes input is Page Number
+             var pageData = quran.getPageData(page);
+             int surahNum = pageData[0]['surah'];
+             int startAyah = pageData[0]['start'];
+             
+             _currentSurahIndex = surahNum - 1;
+             _targetAyahToScroll = startAyah;
+             
+             _translationController.jumpToPage(_currentSurahIndex);
+          } else {
+             // In Mushaf mode, just jump to the page
+             _mushafController.jumpToPage(pageOrSurahInfo - 1);
+          }
           _startHideTimer();
         },
       ),
     );
   }
 
-  // --- AUDIO LOGIC (WITH RETRY) ---
-
+  // --- AUDIO LOGIC (Robust) ---
   Future<void> _playAyah(int surahNumber, int ayahNumber) async {
     setState(() {
       _isAudioLoading = true;
@@ -293,13 +275,13 @@ class _ReadingScreenState extends State<ReadingScreen> {
     });
 
     String? url;
-    // RETRY LOGIC: Try 3 times to fetch URL (Resilience for background/doze mode)
     int attempts = 0;
+    // Retry logic to handle background network wake-up
     while (attempts < 3) {
       url = await _api.getAyahAudioUrl(surahNumber, ayahNumber);
       if (url != null) break;
       attempts++;
-      await Future.delayed(const Duration(seconds: 1)); // Wait before retry
+      await Future.delayed(const Duration(seconds: 1));
     }
     
     if (url != null) {
@@ -311,50 +293,41 @@ class _ReadingScreenState extends State<ReadingScreen> {
           _isAudioLoading = false;
           _playerState = PlayerState.stopped;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Audio unavailable. Check internet.")),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Audio unavailable")));
       }
     }
   }
 
-  void _pauseAudio() async {
-    await _audioPlayer.pause();
-  }
-
-  void _resumeAudio() async {
-    await _audioPlayer.resume();
+  void _pauseAudio() async => await _audioPlayer.pause();
+  void _resumeAudio() async => await _audioPlayer.resume();
+  
+  void _stopAudio() async {
+    await _audioPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _playingSurah = null;
+        _playingAyah = null;
+      });
+    }
   }
 
   void _playNextAyah() {
     if (_playingSurah == null || _playingAyah == null) return;
-
-    final surahData = _allSurahs.firstWhere(
-      (s) => s['number'] == _playingSurah, 
-      orElse: () => {'ayahs': 0}
-    );
     
-    final int maxAyahs = surahData['ayahs'];
-
-    if (_playingAyah! < maxAyahs) {
+    // Get total ayahs in current surah
+    int totalAyahs = quran.getVerseCount(_playingSurah!);
+    
+    if (_playingAyah! < totalAyahs) {
+      // Play next ayah in same surah
       _playAyah(_playingSurah!, _playingAyah! + 1);
     } else {
+      // End of surah
       _stopAudio();
     }
   }
 
-  void _stopAudio() async {
-    await _audioPlayer.stop();
-    if (mounted) setState(() {
-      _playingSurah = null;
-      _playingAyah = null;
-    });
-  }
-
   // --- BOOKMARK LOGIC ---
-  bool _isBookmarked(String surah, int ayah) {
-    return _bookmarkedAyahs.contains("$surah:$ayah");
-  }
+  bool _isBookmarked(String surah, int ayah) => _bookmarkedAyahs.contains("$surah:$ayah");
 
   Future<void> _toggleBookmark(String surah, int ayahNum) async {
     final prefs = await SharedPreferences.getInstance();
@@ -395,38 +368,22 @@ class _ReadingScreenState extends State<ReadingScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-              ),
+              Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
               ListTile(
                 leading: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accentGreen, size: 32),
                 title: const Text("Recite from here", style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text("Plays until end of Surah"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _playAyah(surahNumber, ayahNum);
-                },
+                onTap: () { Navigator.pop(context); _playAyah(surahNumber, ayahNum); },
               ),
               const Divider(),
               ListTile(
                 leading: Icon(isBookmarked ? Icons.bookmark_remove : Icons.bookmark_add, color: AppColors.gold),
                 title: Text(isBookmarked ? "Remove Bookmark" : "Bookmark Ayah"),
-                onTap: () {
-                  Navigator.pop(context);
-                  _toggleBookmark(surahName, ayahNum);
-                  _startHideTimer();
-                },
+                onTap: () { Navigator.pop(context); _toggleBookmark(surahName, ayahNum); _startHideTimer(); },
               ),
               ListTile(
                 leading: const Icon(Icons.copy, color: AppColors.primaryText),
                 title: const Text("Copy Ayah Text"),
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: text));
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Copied"), duration: Duration(seconds: 1)));
-                  _startHideTimer();
-                },
+                onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(context); _startHideTimer(); },
               ),
               const SizedBox(height: 10),
             ],
@@ -440,6 +397,42 @@ class _ReadingScreenState extends State<ReadingScreen> {
   Widget build(BuildContext context) {
     final isPlayingOrPaused = _playerState == PlayerState.playing || _playerState == PlayerState.paused || _isAudioLoading;
 
+    // BUILD BODY CONTENT BASED ON MODE
+    Widget bodyContent;
+    if (_isTranslationMode) {
+      bodyContent = PageView.builder(
+        controller: _translationController,
+        itemCount: 114, // 114 Surahs
+        onPageChanged: _onPageChanged,
+        itemBuilder: (context, index) {
+          int surahNum = index + 1;
+          return _TranslationSurahLoader(
+            surahNumber: surahNum,
+            initialAyahScroll: _targetAyahToScroll, // Sync Target
+            onTapContent: _toggleControls,
+            onVisibleAyahChanged: (ayah) {
+              // Update Sync Source
+              _currentVisibleAyahInTranslation = ayah;
+            },
+          );
+        },
+      );
+    } else {
+      bodyContent = PageView.builder(
+        controller: _mushafController,
+        itemCount: 604, // 604 Pages
+        onPageChanged: _onPageChanged,
+        itemBuilder: (context, index) {
+          return _MushafPageLoader(
+            pageNumber: index + 1,
+            onTapContent: _toggleControls,
+            onLongPressAyah: _showAyahMenu,
+            currentPlayingAyah: (isPlayingOrPaused && _playingSurah != null) ? _playingAyah : null,
+          );
+        },
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: AnnotatedRegion<SystemUiOverlayStyle>(
@@ -448,20 +441,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
           children: [
             Directionality(
               textDirection: TextDirection.rtl,
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: 604,
-                onPageChanged: _onPageChanged,
-                itemBuilder: (context, index) {
-                  return _PageLoader(
-                    pageNumber: index + 1,
-                    isTranslationMode: _isTranslationMode,
-                    onTapContent: _toggleControls,
-                    onLongPressAyah: _showAyahMenu,
-                    currentPlayingAyah: (isPlayingOrPaused && _playingSurah != null) ? _playingAyah : null,
-                  );
-                },
-              ),
+              child: bodyContent,
             ),
             
             // CONTROLS OVERLAY
@@ -475,6 +455,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Stack(
                       children: [
+                        // BACK BUTTON
                         Positioned(
                           top: 0, left: 0,
                           child: _GlassButton(
@@ -482,6 +463,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                             onTap: () => Navigator.pop(context, true),
                           ),
                         ),
+                        // NAVIGATION BUTTON
                         Positioned(
                           top: 0, right: 0,
                           child: _GlassButton(
@@ -490,6 +472,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                           ),
                         ),
                         
+                        // TRANSLATE TOGGLE (Only shown if audio player isn't covering bottom)
                         if (!isPlayingOrPaused)
                           Positioned(
                             bottom: 20, left: 0, right: 0,
@@ -520,7 +503,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                   ),
                   child: Row(
                     children: [
-                      // Info
+                      // INFO
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,7 +513,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
                           ],
                         ),
                       ),
-                      // Controls
+                      // CONTROLS
                       if (_isAudioLoading)
                         const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentGreen))
                       else ...[
@@ -574,28 +557,26 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
 // ---------------- LOADERS ----------------
 
-class _PageLoader extends StatefulWidget {
+class _MushafPageLoader extends StatefulWidget {
   final int pageNumber;
-  final bool isTranslationMode;
   final VoidCallback onTapContent;
   final Function(int, String, String, int) onLongPressAyah;
   final int? currentPlayingAyah;
 
-  const _PageLoader({
+  const _MushafPageLoader({
     required this.pageNumber,
-    required this.isTranslationMode,
     required this.onTapContent,
     required this.onLongPressAyah,
     this.currentPlayingAyah,
   });
 
   @override
-  State<_PageLoader> createState() => _PageLoaderState();
+  State<_MushafPageLoader> createState() => _MushafPageLoaderState();
 }
 
-class _PageLoaderState extends State<_PageLoader> with AutomaticKeepAliveClientMixin {
+class _MushafPageLoaderState extends State<_MushafPageLoader> with AutomaticKeepAliveClientMixin {
   final _api = QuranPageApi();
-  late Future<List<dynamic>> _pageFuture;
+  late Future<QuranPageResponse> _pageFuture;
 
   @override
   bool get wantKeepAlive => true;
@@ -603,28 +584,13 @@ class _PageLoaderState extends State<_PageLoader> with AutomaticKeepAliveClientM
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  void _loadData() {
-    _pageFuture = Future.wait([
-      _api.getPage(widget.pageNumber),
-      if (widget.isTranslationMode) _api.getTranslationPage(widget.pageNumber)
-    ]);
-  }
-
-  @override
-  void didUpdateWidget(covariant _PageLoader oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.isTranslationMode != widget.isTranslationMode) {
-      setState(() => _loadData());
-    }
+    _pageFuture = _api.getPage(widget.pageNumber);
   }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    return FutureBuilder(
+    return FutureBuilder<QuranPageResponse>(
       future: _pageFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -634,22 +600,70 @@ class _PageLoaderState extends State<_PageLoader> with AutomaticKeepAliveClientM
           return Center(child: Text('Error: ${snapshot.error}'));
         }
 
-        final data = snapshot.data as List<dynamic>;
-        final arabicData = (data[0] as QuranPageResponse).data;
-        final translationData = widget.isTranslationMode && data.length > 1
-            ? (data[1] as QuranPageResponse).data
-            : null;
-
         return GestureDetector(
           onTap: widget.onTapContent,
           behavior: HitTestBehavior.translucent,
-          child: widget.isTranslationMode && translationData != null
-              ? _TranslationPageView(arabicData: arabicData, translationData: translationData)
-              : _MushafPageView(
-                  pageData: arabicData, 
-                  onLongPress: widget.onLongPressAyah,
-                  highlightAyah: widget.currentPlayingAyah,
-                ),
+          child: _MushafPageView(
+            pageData: snapshot.data!.data,
+            onLongPress: widget.onLongPressAyah,
+            highlightAyah: widget.currentPlayingAyah,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _TranslationSurahLoader extends StatefulWidget {
+  final int surahNumber;
+  final int initialAyahScroll;
+  final VoidCallback onTapContent;
+  final Function(int) onVisibleAyahChanged;
+
+  const _TranslationSurahLoader({
+    required this.surahNumber,
+    required this.initialAyahScroll,
+    required this.onTapContent,
+    required this.onVisibleAyahChanged,
+  });
+
+  @override
+  State<_TranslationSurahLoader> createState() => _TranslationSurahLoaderState();
+}
+
+class _TranslationSurahLoaderState extends State<_TranslationSurahLoader> with AutomaticKeepAliveClientMixin {
+  final _api = QuranPageApi();
+  late Future<List<QuranSurah>> _surahFuture;
+
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _surahFuture = _api.getSurahWithTranslation(widget.surahNumber);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return FutureBuilder<List<QuranSurah>>(
+      future: _surahFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.gold));
+        }
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        return GestureDetector(
+          onTap: widget.onTapContent,
+          child: _TranslationSurahView(
+            surahs: snapshot.data!,
+            initialAyah: widget.initialAyahScroll,
+            onVisibleAyahChanged: widget.onVisibleAyahChanged,
+          ),
         );
       },
     );
@@ -657,6 +671,122 @@ class _PageLoaderState extends State<_PageLoader> with AutomaticKeepAliveClientM
 }
 
 // ---------------- VIEWS ----------------
+
+class _TranslationSurahView extends StatefulWidget {
+  final List<QuranSurah> surahs;
+  final int initialAyah;
+  final Function(int) onVisibleAyahChanged;
+
+  const _TranslationSurahView({required this.surahs, required this.initialAyah, required this.onVisibleAyahChanged});
+
+  @override
+  State<_TranslationSurahView> createState() => _TranslationSurahViewState();
+}
+
+class _TranslationSurahViewState extends State<_TranslationSurahView> {
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+
+  @override
+  void initState() {
+    super.initState();
+    // Scroll to specific ayah (if not start of surah)
+    if (widget.initialAyah > 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Index mapping: 0 is Header. Ayah 1 is Index 1. 
+        // So target index = ayahNumber.
+        try {
+          _itemScrollController.jumpTo(index: widget.initialAyah);
+        } catch(e) {
+          print("Scroll Error: $e");
+        }
+      });
+    }
+
+    _itemPositionsListener.itemPositions.addListener(() {
+      final positions = _itemPositionsListener.itemPositions.value;
+      if (positions.isNotEmpty) {
+        // Find top-most visible item
+        final first = positions.first.index;
+        // Mapping back: Index 0 is Header (Count as Ayah 1). Index 1 is Ayah 1.
+        int visibleAyah = first == 0 ? 1 : first;
+        widget.onVisibleAyahChanged(visibleAyah);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final arabicSurah = widget.surahs[0];
+    final englishSurah = widget.surahs.length > 1 ? widget.surahs[1] : widget.surahs[0];
+
+    return ScrollablePositionedList.builder(
+      itemScrollController: _itemScrollController,
+      itemPositionsListener: _itemPositionsListener,
+      padding: const EdgeInsets.fromLTRB(16, 80, 16, 100),
+      itemCount: arabicSurah.ayahs.length + 1, // Header + Ayahs
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          // HEADER
+          return Container(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              children: [
+                Text(arabicSurah.name, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 28, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(arabicSurah.englishName, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+              ],
+            ),
+          );
+        }
+
+        final i = index - 1; // Ayah Index in Data
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 30),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ARABIC
+              Align(
+                alignment: Alignment.centerRight,
+                child: RichText(
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.right,
+                  text: TextSpan(
+                    style: const TextStyle(
+                      fontFamily: 'UthmanicHafs', 
+                      fontSize: 26, 
+                      color: Colors.black,
+                      height: 1.6
+                    ),
+                    children: [
+                      TextSpan(text: arabicSurah.ayahs[i].text + " "),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: _AyahEndSymbol(number: arabicSurah.ayahs[i].numberInSurah),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // ENGLISH
+              Directionality(
+                textDirection: TextDirection.ltr,
+                child: Text(
+                  "${englishSurah.ayahs[i].numberInSurah}. ${englishSurah.ayahs[i].text}", 
+                  style: const TextStyle(fontSize: 17, height: 1.5, color: AppColors.primaryText),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.grey, thickness: 0.5),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
 
 class _MushafPageView extends StatelessWidget {
   final QuranPageData pageData;
@@ -799,57 +929,6 @@ class _MushafPageView extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _TranslationPageView extends StatelessWidget {
-  final QuranPageData arabicData;
-  final QuranPageData translationData;
-
-  const _TranslationPageView({required this.arabicData, required this.translationData});
-
-  @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 80, 16, 100),
-      itemCount: arabicData.ayahs.length,
-      itemBuilder: (context, index) {
-        final arabicAyah = arabicData.ayahs[index];
-        final englishAyah = translationData.ayahs.length > index ? translationData.ayahs[index] : null;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          elevation: 1,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  arabicAyah.text,
-                  textAlign: TextAlign.right,
-                  textDirection: TextDirection.rtl,
-                  style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 22, height: 1.8),
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                const SizedBox(height: 12),
-                
-                Directionality(
-                  textDirection: TextDirection.ltr,
-                  child: Text(
-                    englishAyah?.text ?? "Loading...",
-                    textAlign: TextAlign.left,
-                    style: const TextStyle(fontSize: 16, height: 1.5, color: AppColors.primaryText),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
@@ -997,12 +1076,18 @@ class _NavigationSheetState extends State<_NavigationSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Filter Surahs based on search query
     final filteredSurahs = widget.surahList.where((s) {
       final name = s['name'].toString().toLowerCase();
       final english = s['english'].toString().toLowerCase();
+      final transliteration = s['transliteration'].toString().toLowerCase();
       final number = s['number'].toString();
       final q = _searchQuery.toLowerCase();
-      return name.contains(q) || english.contains(q) || number.contains(q);
+      
+      return name.contains(q) || 
+             english.contains(q) || 
+             transliteration.contains(q) || 
+             number.contains(q);
     }).toList();
 
     return Container(
@@ -1040,10 +1125,13 @@ class _NavigationSheetState extends State<_NavigationSheet> {
                       backgroundColor: AppColors.surfaceLight,
                       child: Text("${s['number']}", style: const TextStyle(fontSize: 12, color: AppColors.primaryText)),
                     ),
-                    title: Text(s['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    title: Text(s['transliteration'], style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: Text(s['english']),
                     trailing: Text("Page ${s['page']}", style: const TextStyle(color: Colors.grey)),
-                    onTap: () => widget.onPageSelected(s['page']),
+                    onTap: () {
+                      // Navigate to Page (search metadata has page number)
+                      widget.onPageSelected(s['page']);
+                    },
                   );
                 },
               ),

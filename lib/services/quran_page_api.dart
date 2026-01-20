@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class QuranPageApi {
-  // CHANGED TO HTTPS to fix Android blocking requests
   static const String _baseUrl = 'https://api.alquran.cloud/v1/page';
   static const String _ayahBaseUrl = 'https://api.alquran.cloud/v1/ayah';
+  static const String _surahBaseUrl = 'https://api.alquran.cloud/v1/surah';
 
   Future<QuranPageResponse> getPage(int pageNumber) async {
     return _fetchPage(pageNumber, 'quran-uthmani');
@@ -14,14 +14,29 @@ class QuranPageApi {
     return _fetchPage(pageNumber, 'en.ahmedraza');
   }
 
-  // NEW: Fetch Audio URL (Mishary Al-Afasy)
+  // NEW: Fetch both Arabic (quran-uthmani) and Translation (en.ahmedraza)
+  Future<List<QuranSurah>> getSurahWithTranslation(int surahNumber) async {
+    final url = Uri.parse('$_surahBaseUrl/$surahNumber/editions/quran-uthmani,en.ahmedraza');
+    try {
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body)['data'];
+        return data.map((json) => QuranSurah.fromJson(json)).toList();
+      } else {
+        throw Exception('Failed to load surah: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
   Future<String?> getAyahAudioUrl(int surahNumber, int ayahNumber) async {
     final url = Uri.parse('$_ayahBaseUrl/$surahNumber:$ayahNumber/ar.alafasy');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body);
-        return json['data']['audio']; // Returns the MP3 URL
+        return json['data']['audio'];
       }
     } catch (e) {
       print("Audio Fetch Error: $e");
@@ -44,8 +59,31 @@ class QuranPageApi {
   }
 }
 
-// ... Keep existing Models (QuranPageResponse, QuranPageData, etc.) ...
-// Ensure QuranAyah has the 'surahNumber' field as defined in previous steps.
+// --- MODELS ---
+
+class QuranSurah {
+  final int number;
+  final String name;
+  final String englishName;
+  final List<QuranAyah> ayahs;
+
+  QuranSurah({
+    required this.number,
+    required this.name,
+    required this.englishName,
+    required this.ayahs,
+  });
+
+  factory QuranSurah.fromJson(Map<String, dynamic> json) {
+    return QuranSurah(
+      number: json['number'],
+      name: json['name'],
+      englishName: json['englishName'],
+      ayahs: (json['ayahs'] as List).map((e) => QuranAyah.fromJson(e)).toList(),
+    );
+  }
+}
+
 class QuranPageResponse {
   final QuranPageData data;
   QuranPageResponse({required this.data});
@@ -89,24 +127,6 @@ class QuranAyah {
       surahNumber: surah['number'] ?? 0,
       surahName: surah['name'] ?? '',
       juz: json['juz'] ?? 0,
-    );
-  }
-}
-
-class QuranSurahRef {
-  final int number;
-  final String name;
-  final String englishName;
-  final int numberOfAyahs;
-
-  QuranSurahRef({required this.number, required this.name, required this.englishName, required this.numberOfAyahs});
-
-  factory QuranSurahRef.fromJson(Map<String, dynamic> json) {
-    return QuranSurahRef(
-      number: json['number'],
-      name: json['name'],
-      englishName: json['englishName'],
-      numberOfAyahs: json['numberOfAyahs'],
     );
   }
 }
