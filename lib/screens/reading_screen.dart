@@ -9,7 +9,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:quran/quran.dart' as quran;
 
-// 👇 IMPORT YOUR DATA FILE
+// 👇 IMPORT YOUR DATA FILE HERE
 import 'package:tarteel/data/quran_data.dart';
 import 'package:tarteel/services/quran_page_api.dart';
 import 'package:tarteel/services/reading_progress_service.dart';
@@ -34,8 +34,10 @@ class _ReadingScreenState extends State<ReadingScreen> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   
   // --- STATE ---
-  int _currentPageIndex = 0; // 0-603 (Page 1 is index 0)
-  int _currentSurahIndex = 0; // 0-113 (Surah 1 is index 0)
+  // Page Index: 0 = Page 1, 1 = Page 2...
+  int _currentPageIndex = 0; 
+  // Surah Index: 0 = Fatiha, 1 = Baqarah...
+  int _currentSurahIndex = 0; 
   
   // --- SYNC VARIABLES ---
   int _targetAyahToScroll = 1; 
@@ -126,12 +128,14 @@ class _ReadingScreenState extends State<ReadingScreen> {
     _isTranslationMode = savedMode;
 
     if (_isTranslationMode) {
-      // ✅ FIX: Use 'quran' package to find the correct Surah for this page
+      // ✅ FIX: Convert page number to surah number and find the starting ayah
+      int surahNum = QuranData.getSurahForPage(initialPage);
+      
+      // Get the starting ayah for this page
       var pageData = quran.getPageData(initialPage);
-      int surahNum = pageData[0]['surah']; // e.g. Page 3 returns Surah 2
       int startAyah = pageData[0]['start'];
 
-      _currentSurahIndex = surahNum - 1;
+      _currentSurahIndex = surahNum - 1;  // Convert to 0-indexed for PageView
       _targetAyahToScroll = startAyah;
       
       _translationController = PageController(initialPage: _currentSurahIndex);
@@ -155,12 +159,15 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
   void _onPageChanged(int index) {
     if (_isTranslationMode) {
-      // Index = Surah Index
+      // In translation mode: index is the Surah index (0-based)
       setState(() => _currentSurahIndex = index);
-      int page = quran.getPageNumber(index + 1, 1);
-      _progressService.saveLastReadPage(page);
+      
+      // ✅ FIX: Convert surah number to page number for saving progress
+      int surahNum = index + 1;
+      int pageForThisSurah = quran.getPageNumber(surahNum, 1);
+      _progressService.saveLastReadPage(pageForThisSurah);
     } else {
-      // Index = Page Index
+      // In Mushaf mode: index is the Page index (0-based)
       setState(() => _currentPageIndex = index);
       _progressService.saveLastReadPage(index + 1);
     }
@@ -170,28 +177,35 @@ class _ReadingScreenState extends State<ReadingScreen> {
     setState(() {
       if (_isTranslationMode) {
         // --- TRANSLATION -> MUSHAF ---
+        // 1. Get the current surah and visible ayah in translation
         int currentSurah = _currentSurahIndex + 1;
-        int currentAyah = _currentVisibleAyahInTranslation; 
+        int currentAyah = _currentVisibleAyahInTranslation;
         
-        // Calculate exact page for the ayah currently visible
+        // 2. Calculate the page number for this surah:ayah
         int targetPage = quran.getPageNumber(currentSurah, currentAyah);
         
+        // 3. Switch to Mushaf at the calculated page
         _currentPageIndex = targetPage - 1;
         _mushafController = PageController(initialPage: _currentPageIndex);
         _isTranslationMode = false;
         
       } else {
         // --- MUSHAF -> TRANSLATION ---
+        // 1. Get the current page number (1-indexed)
         int currentPage = _currentPageIndex + 1;
         
-        // ✅ FIX: Get the exact Surah and Ayah starting on this page
+        // 2. Find which surah is at the top of this page
+        int surahNum = QuranData.getSurahForPage(currentPage);
+        
+        // 3. Find the starting ayah of this page
         var pageData = quran.getPageData(currentPage);
-        int targetSurah = pageData[0]['surah'];
-        int targetAyah = pageData[0]['start'];
+        int startAyah = pageData[0]['start'];
         
-        _currentSurahIndex = targetSurah - 1;
-        _targetAyahToScroll = targetAyah; 
+        // 4. Update translation mode variables (surah index is 0-indexed)
+        _currentSurahIndex = surahNum - 1;
+        _targetAyahToScroll = startAyah;
         
+        // 5. Switch to Translation at the correct surah
         _translationController = PageController(initialPage: _currentSurahIndex);
         _isTranslationMode = true;
       }
@@ -207,16 +221,19 @@ class _ReadingScreenState extends State<ReadingScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => _NavigationSheet(
-        // Use imported data
+        // Pass the list from your Data File
         surahList: QuranData.allSurahs,
         juzList: _juzList,
         onPageSelected: (pageOrSurahInfo) {
           Navigator.pop(context);
           if (_isTranslationMode) {
-             // In Translation mode, calculate Surah from the selected Page
+             // ✅ FIX: In translation mode, the selected value is a PAGE number
+             // We need to convert it to the correct SURAH number
              int page = pageOrSurahInfo;
+             int surahNum = QuranData.getSurahForPage(page);
+             
+             // Get the starting ayah for this page
              var pageData = quran.getPageData(page);
-             int surahNum = pageData[0]['surah'];
              int startAyah = pageData[0]['start'];
              
              setState(() {
@@ -225,11 +242,12 @@ class _ReadingScreenState extends State<ReadingScreen> {
              });
              _translationController.jumpToPage(_currentSurahIndex);
           } else {
-             // Mushaf mode
+             // Mushaf mode: directly use the page number
+             int pageIndex = pageOrSurahInfo - 1;
              setState(() {
-               _currentPageIndex = pageOrSurahInfo - 1;
+               _currentPageIndex = pageIndex;
              });
-             _mushafController.jumpToPage(_currentPageIndex);
+             _mushafController.jumpToPage(pageIndex);
           }
           _startHideTimer();
         },
