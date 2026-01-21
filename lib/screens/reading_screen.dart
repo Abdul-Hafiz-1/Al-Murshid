@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -41,7 +40,8 @@ class _ReadingScreenState extends State<ReadingScreen> {
   
   // --- SYNC VARIABLES ---
   int _targetAyahToScroll = 1; 
-  int _currentVisibleAyahInTranslation = 1; 
+  int _currentVisibleAyahInTranslation = 1;
+  int _currentVisibleAyahInMushaf = 1;  // Track visible ayah in Mushaf mode 
   
   bool _isTranslationMode = false;
   bool _areControlsVisible = true;
@@ -128,19 +128,30 @@ class _ReadingScreenState extends State<ReadingScreen> {
     _isTranslationMode = savedMode;
 
     if (_isTranslationMode) {
-      // ✅ FIX: Convert page number to surah number and find the starting ayah
+      // ✅ FIX: Convert page number to surah number
       int surahNum = QuranData.getSurahForPage(initialPage);
-      
-      // Get the starting ayah for this page
-      var pageData = quran.getPageData(initialPage);
-      int startAyah = pageData[0]['start'];
+      int targetSurahIndex = surahNum - 1;
 
-      _currentSurahIndex = surahNum - 1;  // Convert to 0-indexed for PageView
-      _targetAyahToScroll = startAyah;
+      _currentSurahIndex = targetSurahIndex;
+      _targetAyahToScroll = 1;  // Start at ayah 1 of the surah
       
-      _translationController = PageController(initialPage: _currentSurahIndex);
+      _translationController = PageController();
+      
+      // Ensure the controller jumps to the page after being attached
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_translationController.hasClients) {
+          _translationController.jumpToPage(targetSurahIndex);
+        }
+      });
     } else {
-      _mushafController = PageController(initialPage: _currentPageIndex);
+      _mushafController = PageController();
+      
+      // Ensure the controller jumps to the page after being attached
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_mushafController.hasClients) {
+          _mushafController.jumpToPage(_currentPageIndex);
+        }
+      });
     }
     
     setState(() {});
@@ -174,43 +185,80 @@ class _ReadingScreenState extends State<ReadingScreen> {
   }
 
   void _toggleTranslationMode() {
-    setState(() {
-      if (_isTranslationMode) {
-        // --- TRANSLATION -> MUSHAF ---
-        // 1. Get the current surah and visible ayah in translation
-        int currentSurah = _currentSurahIndex + 1;
-        int currentAyah = _currentVisibleAyahInTranslation;
-        
-        // 2. Calculate the page number for this surah:ayah
-        int targetPage = quran.getPageNumber(currentSurah, currentAyah);
-        
-        // 3. Switch to Mushaf at the calculated page
-        _currentPageIndex = targetPage - 1;
-        _mushafController = PageController(initialPage: _currentPageIndex);
+    if (_isTranslationMode) {
+      // --- TRANSLATION -> MUSHAF ---
+      // 1. Get the current surah and visible ayah in translation
+      int currentSurah = _currentSurahIndex + 1;
+      int currentAyah = _currentVisibleAyahInTranslation;
+      
+      print('DEBUG TOGGLE: FROM TRANSLATION -> MUSHAF');
+      print('DEBUG: Current Surah: $currentSurah, Current Ayah: $currentAyah');
+      
+      // 2. Use the quran package to get the EXACT page number
+      int targetPage = quran.getPageNumber(currentSurah, currentAyah);
+      int targetPageIndex = targetPage - 1;
+      
+      print('DEBUG: Calculated Target Page: $targetPage (index: $targetPageIndex) using quran.getPageNumber()');
+      
+      // 3. Dispose old controller and create new one
+      try { _mushafController.dispose(); } catch(e) {}
+      
+      setState(() {
+        _currentPageIndex = targetPageIndex;
+        _currentVisibleAyahInMushaf = currentAyah;
+        _mushafController = PageController();
         _isTranslationMode = false;
-        
-      } else {
-        // --- MUSHAF -> TRANSLATION ---
-        // 1. Get the current page number (1-indexed)
-        int currentPage = _currentPageIndex + 1;
-        
-        // 2. Find which surah is at the top of this page
-        int surahNum = QuranData.getSurahForPage(currentPage);
-        
-        // 3. Find the starting ayah of this page
-        var pageData = quran.getPageData(currentPage);
-        int startAyah = pageData[0]['start'];
-        
-        // 4. Update translation mode variables (surah index is 0-indexed)
-        _currentSurahIndex = surahNum - 1;
-        _targetAyahToScroll = startAyah;
-        
-        // 5. Switch to Translation at the correct surah
-        _translationController = PageController(initialPage: _currentSurahIndex);
+        _progressService.saveReadingMode(_isTranslationMode);
+      });
+      
+      // Ensure the controller jumps to the page after being attached
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_mushafController.hasClients) {
+          print('DEBUG: Jumping Mushaf Controller to page $targetPageIndex');
+          _mushafController.jumpToPage(targetPageIndex);
+        }
+      });
+      
+    } else {
+      // --- MUSHAF -> TRANSLATION ---
+      // 1. Get the current page number (1-indexed)
+      int currentPage = _currentPageIndex + 1;
+      
+      // 2. Find which surah is at the top of this page using QuranData
+      int surahNum = QuranData.getSurahForPage(currentPage);
+      
+      // 3. Get the first ayah on this page from page data
+      var pageData = quran.getPageData(currentPage);
+      int firstAyahOnPage = pageData[0]['start'];
+      
+      print('DEBUG TOGGLE: FROM MUSHAF -> TRANSLATION');
+      print('DEBUG: Current Page: $currentPage, First Ayah: $firstAyahOnPage');
+      print('DEBUG: Visible Ayah in Mushaf: $_currentVisibleAyahInMushaf');
+      print('DEBUG: Surah $surahNum (${QuranData.allSurahs[surahNum - 1]['transliteration']})');
+      
+      int targetSurahIndex = surahNum - 1;
+      int targetAyah = _currentVisibleAyahInMushaf;
+      
+      // Dispose old controller and create new one
+      try { _translationController.dispose(); } catch(e) {}
+      
+      setState(() {
+        _currentSurahIndex = targetSurahIndex;
+        _targetAyahToScroll = targetAyah;
+        _translationController = PageController();
         _isTranslationMode = true;
-      }
-      _progressService.saveReadingMode(_isTranslationMode);
-    });
+        _progressService.saveReadingMode(_isTranslationMode);
+      });
+      
+      // Ensure the controller jumps to the page after being attached
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (_translationController.hasClients) {
+          print('DEBUG: Jumping Translation Controller to surah $targetSurahIndex');
+          _translationController.jumpToPage(targetSurahIndex);
+        }
+      });
+    }
+    
     _startHideTimer();
   }
 
@@ -231,23 +279,32 @@ class _ReadingScreenState extends State<ReadingScreen> {
              // We need to convert it to the correct SURAH number
              int page = pageOrSurahInfo;
              int surahNum = QuranData.getSurahForPage(page);
-             
-             // Get the starting ayah for this page
-             var pageData = quran.getPageData(page);
-             int startAyah = pageData[0]['start'];
+             int targetSurahIndex = surahNum - 1;
              
              setState(() {
-               _currentSurahIndex = surahNum - 1;
-               _targetAyahToScroll = startAyah;
+               _currentSurahIndex = targetSurahIndex;
+               _targetAyahToScroll = 1;  // Start at ayah 1 of the surah
              });
-             _translationController.jumpToPage(_currentSurahIndex);
+             
+             // Ensure the controller jumps after being attached
+             Future.delayed(const Duration(milliseconds: 100), () {
+               if (_translationController.hasClients) {
+                 _translationController.jumpToPage(targetSurahIndex);
+               }
+             });
           } else {
              // Mushaf mode: directly use the page number
              int pageIndex = pageOrSurahInfo - 1;
              setState(() {
                _currentPageIndex = pageIndex;
              });
-             _mushafController.jumpToPage(pageIndex);
+             
+             // Ensure the controller jumps after being attached
+             Future.delayed(const Duration(milliseconds: 100), () {
+               if (_mushafController.hasClients) {
+                 _mushafController.jumpToPage(pageIndex);
+               }
+             });
           }
           _startHideTimer();
         },
@@ -378,6 +435,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
             initialAyahScroll: _targetAyahToScroll,
             onTapContent: _toggleControls,
             onVisibleAyahChanged: (ayah) => _currentVisibleAyahInTranslation = ayah,
+            onLongPressAyah: _showAyahMenu,
           );
         },
       );
@@ -392,6 +450,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
             onTapContent: _toggleControls,
             onLongPressAyah: _showAyahMenu,
             currentPlayingAyah: (isPlayingOrPaused && _playingSurah != null) ? _playingAyah : null,
+            onFirstAyahVisible: (ayah) => _currentVisibleAyahInMushaf = ayah,
           );
         },
       );
@@ -463,8 +522,15 @@ class _MushafPageLoader extends StatefulWidget {
   final VoidCallback onTapContent;
   final Function(int, String, String, int) onLongPressAyah;
   final int? currentPlayingAyah;
+  final Function(int)? onFirstAyahVisible;  // Callback to track first visible ayah
 
-  const _MushafPageLoader({required this.pageNumber, required this.onTapContent, required this.onLongPressAyah, this.currentPlayingAyah});
+  const _MushafPageLoader({
+    required this.pageNumber,
+    required this.onTapContent,
+    required this.onLongPressAyah,
+    this.currentPlayingAyah,
+    this.onFirstAyahVisible,
+  });
 
   @override
   State<_MushafPageLoader> createState() => _MushafPageLoaderState();
@@ -494,7 +560,12 @@ class _MushafPageLoaderState extends State<_MushafPageLoader> with AutomaticKeep
         return GestureDetector(
           onTap: widget.onTapContent,
           behavior: HitTestBehavior.translucent,
-          child: _MushafPageView(pageData: snapshot.data!.data, onLongPress: widget.onLongPressAyah, highlightAyah: widget.currentPlayingAyah),
+          child: _MushafPageView(
+            pageData: snapshot.data!.data,
+            onLongPress: widget.onLongPressAyah,
+            highlightAyah: widget.currentPlayingAyah,
+            onFirstAyahVisible: widget.onFirstAyahVisible,
+          ),
         );
       },
     );
@@ -506,8 +577,15 @@ class _TranslationSurahLoader extends StatefulWidget {
   final int initialAyahScroll;
   final VoidCallback onTapContent;
   final Function(int) onVisibleAyahChanged;
+  final Function(int, String, String, int)? onLongPressAyah;
 
-  const _TranslationSurahLoader({required this.surahNumber, required this.initialAyahScroll, required this.onTapContent, required this.onVisibleAyahChanged});
+  const _TranslationSurahLoader({
+    required this.surahNumber,
+    required this.initialAyahScroll,
+    required this.onTapContent,
+    required this.onVisibleAyahChanged,
+    this.onLongPressAyah,
+  });
 
   @override
   State<_TranslationSurahLoader> createState() => _TranslationSurahLoaderState();
@@ -536,7 +614,12 @@ class _TranslationSurahLoaderState extends State<_TranslationSurahLoader> with A
         if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
         return GestureDetector(
           onTap: widget.onTapContent,
-          child: _TranslationSurahView(surahs: snapshot.data!, initialAyah: widget.initialAyahScroll, onVisibleAyahChanged: widget.onVisibleAyahChanged),
+          child: _TranslationSurahView(
+            surahs: snapshot.data!,
+            initialAyah: widget.initialAyahScroll,
+            onVisibleAyahChanged: widget.onVisibleAyahChanged,
+            onLongPressAyah: widget.onLongPressAyah,
+          ),
         );
       },
     );
@@ -549,8 +632,14 @@ class _TranslationSurahView extends StatefulWidget {
   final List<QuranSurah> surahs;
   final int initialAyah;
   final Function(int) onVisibleAyahChanged;
+  final Function(int, String, String, int)? onLongPressAyah;
 
-  const _TranslationSurahView({required this.surahs, required this.initialAyah, required this.onVisibleAyahChanged});
+  const _TranslationSurahView({
+    required this.surahs,
+    required this.initialAyah,
+    required this.onVisibleAyahChanged,
+    this.onLongPressAyah,
+  });
 
   @override
   State<_TranslationSurahView> createState() => _TranslationSurahViewState();
@@ -559,6 +648,7 @@ class _TranslationSurahView extends StatefulWidget {
 class _TranslationSurahViewState extends State<_TranslationSurahView> {
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+  Timer? _listenerDebounce;
 
   @override
   void initState() {
@@ -569,15 +659,35 @@ class _TranslationSurahViewState extends State<_TranslationSurahView> {
         try { _itemScrollController.jumpTo(index: widget.initialAyah); } catch(e) {}
       });
     }
-    _itemPositionsListener.itemPositions.addListener(() {
+    
+    // Listen to scroll position changes more reliably
+    _itemPositionsListener.itemPositions.addListener(_onItemPositionsChanged);
+  }
+
+  void _onItemPositionsChanged() {
+    // Debounce the listener callback to avoid capturing stale positions during jumps
+    _listenerDebounce?.cancel();
+    _listenerDebounce = Timer(const Duration(milliseconds: 150), () {
       final positions = _itemPositionsListener.itemPositions.value;
       if (positions.isNotEmpty) {
-        final firstIndex = positions.first.index;
+        // Get the first visible item - use the one closest to top
+        final sortedByLeadingEdge = positions.toList()..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
+        final firstVisibleItem = sortedByLeadingEdge.first;
+        final firstIndex = firstVisibleItem.index;
+        
         // Map Index 0 -> Ayah 1 (Header), Index 1 -> Ayah 1.
         int visibleAyah = firstIndex == 0 ? 1 : firstIndex;
+        print('DEBUG TRANSLATION: Visible Ayah = $visibleAyah (firstIndex: $firstIndex, leadingEdge: ${firstVisibleItem.itemLeadingEdge})');
         widget.onVisibleAyahChanged(visibleAyah);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _listenerDebounce?.cancel();
+    _itemPositionsListener.itemPositions.removeListener(_onItemPositionsChanged);
+    super.dispose();
   }
 
   @override
@@ -602,15 +712,28 @@ class _TranslationSurahViewState extends State<_TranslationSurahView> {
           );
         }
         final i = index - 1;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 30),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Align(alignment: Alignment.centerRight, child: RichText(textDirection: TextDirection.rtl, textAlign: TextAlign.right, text: TextSpan(style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 26, color: Colors.black, height: 1.6), children: [TextSpan(text: arabicSurah.ayahs[i].text + " "), WidgetSpan(alignment: PlaceholderAlignment.middle, child: _AyahEndSymbol(number: arabicSurah.ayahs[i].numberInSurah))]))),
-            const SizedBox(height: 16),
-            Directionality(textDirection: TextDirection.ltr, child: Text("${englishSurah.ayahs[i].numberInSurah}. ${englishSurah.ayahs[i].text}", style: const TextStyle(fontSize: 17, height: 1.5, color: AppColors.primaryText))),
-            const SizedBox(height: 16),
-            const Divider(color: Colors.grey, thickness: 0.5),
-          ]),
+        final ayahNumber = arabicSurah.ayahs[i].numberInSurah;
+        final surahNumber = arabicSurah.number;
+        final surahName = arabicSurah.englishName;
+        final arabicText = arabicSurah.ayahs[i].text;
+        
+        return GestureDetector(
+          onLongPress: widget.onLongPressAyah != null 
+            ? () {
+                HapticFeedback.mediumImpact();
+                widget.onLongPressAyah!(surahNumber, surahName, arabicText, ayahNumber);
+              }
+            : null,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 30),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Align(alignment: Alignment.centerRight, child: RichText(textDirection: TextDirection.rtl, textAlign: TextAlign.right, text: TextSpan(style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 26, color: Colors.black, height: 1.6), children: [TextSpan(text: arabicSurah.ayahs[i].text + " "), WidgetSpan(alignment: PlaceholderAlignment.middle, child: _AyahEndSymbol(number: arabicSurah.ayahs[i].numberInSurah))]))),
+              const SizedBox(height: 16),
+              Directionality(textDirection: TextDirection.ltr, child: Text("${englishSurah.ayahs[i].numberInSurah}. ${englishSurah.ayahs[i].text}", style: const TextStyle(fontSize: 17, height: 1.5, color: AppColors.primaryText))),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.grey, thickness: 0.5),
+            ]),
+          ),
         );
       },
     );
@@ -621,11 +744,27 @@ class _MushafPageView extends StatelessWidget {
   final QuranPageData pageData;
   final Function(int, String, String, int) onLongPress;
   final int? highlightAyah;
-  const _MushafPageView({required this.pageData, required this.onLongPress, this.highlightAyah});
+  final Function(int)? onFirstAyahVisible;
+  
+  const _MushafPageView({
+    required this.pageData,
+    required this.onLongPress,
+    this.highlightAyah,
+    this.onFirstAyahVisible,
+  });
+  
   @override
   Widget build(BuildContext context) {
     String pageSurahName = ""; int pageJuz = 0;
     if (pageData.ayahs.isNotEmpty) { pageSurahName = pageData.ayahs.first.surahName; pageJuz = pageData.ayahs.first.juz; }
+    
+    // Call callback with the first ayah on this page
+    if (pageData.ayahs.isNotEmpty && onFirstAyahVisible != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onFirstAyahVisible!(pageData.ayahs.first.numberInSurah);
+      });
+    }
+    
     List<Widget> contentWidgets = [];
     if (pageData.ayahs.isEmpty) return const SizedBox();
     String currentSurah = ""; List<InlineSpan> currentSpans = [];

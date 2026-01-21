@@ -17,6 +17,27 @@ class QuranData {
     return {'surah': getSurahForPage(pageNumber), 'start': 1};
   }
 
+  static int getPageForSurahAndAyah(int surahNumber, int ayahNumber) {
+    // Get the starting page of the surah
+    if (surahNumber < 1 || surahNumber > 114) {
+      return 1;
+    }
+    
+    final surah = allSurahs[surahNumber - 1]; // Convert to 0-indexed
+    int startPage = surah['page'] as int;
+    
+    // Estimate additional pages based on ayah position
+    // This is a rough estimate assuming ~15 ayahs per page on average
+    // Fine-tuning based on surah lengths for better accuracy
+    final surahAyahs = surah['ayahs'] as int;
+    if (ayahNumber <= surahAyahs) {
+      int estimatedAdditionalPages = (ayahNumber - 1) ~/ 15;
+      return startPage + estimatedAdditionalPages;
+    }
+    
+    return startPage;
+  }
+
   // Complete List of 114 Surahs with Search Metadata
   static final List<Map<String, dynamic>> allSurahs = [
     {"number": 1, "name": "سورة الفاتحة", "english": "The Opening", "transliteration": "Al-Fatiha", "page": 1, "ayahs": 7},
