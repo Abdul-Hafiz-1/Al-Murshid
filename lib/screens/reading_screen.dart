@@ -9,7 +9,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:quran/quran.dart' as quran;
 
-// 👇 IMPORT YOUR DATA FILE HERE
+// 👇 IMPORT YOUR DATA FILE
 import 'package:tarteel/data/quran_data.dart';
 import 'package:tarteel/services/quran_page_api.dart';
 import 'package:tarteel/services/reading_progress_service.dart';
@@ -28,23 +28,17 @@ class _ReadingScreenState extends State<ReadingScreen> {
   final _api = QuranPageApi();
   
   // --- CONTROLLERS ---
-  // Controls the Mushaf PageView (Pages 1-604)
   late PageController _mushafController; 
-  // Controls the Translation PageView (Surahs 1-114)
   late PageController _translationController;
-  // Generic reference to whichever controller is active
-  late PageController _pageController; 
   
   final AudioPlayer _audioPlayer = AudioPlayer();
   
-  // --- STATE VARIABLES ---
-  int _currentPageIndex = 0; // Index 0 = Page 1
-  int _currentSurahIndex = 0; // Index 0 = Surah 1
+  // --- STATE ---
+  int _currentPageIndex = 0; // 0-603 (Page 1 is index 0)
+  int _currentSurahIndex = 0; // 0-113 (Surah 1 is index 0)
   
-  // SYNC VARIABLES
-  // When switching to Translation, which Ayah number should we scroll to?
+  // --- SYNC VARIABLES ---
   int _targetAyahToScroll = 1; 
-  // When scrolling Translation, which Ayah is currently at the top?
   int _currentVisibleAyahInTranslation = 1; 
   
   bool _isTranslationMode = false;
@@ -52,7 +46,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
   Timer? _hideTimer;
   List<String> _bookmarkedAyahs = [];
 
-  // AUDIO STATE
+  // --- AUDIO STATE ---
   PlayerState _playerState = PlayerState.stopped;
   bool _isAudioLoading = false;
   int? _playingSurah;
@@ -61,7 +55,6 @@ class _ReadingScreenState extends State<ReadingScreen> {
   StreamSubscription? _playerCompleteSubscription;
   StreamSubscription? _playerStateSubscription;
 
-  // JUZ NAVIGATION DATA
   final List<int> _juzList = List.generate(30, (index) => index + 1);
 
   @override
@@ -74,12 +67,8 @@ class _ReadingScreenState extends State<ReadingScreen> {
   }
 
   Future<void> _setupAudio() async {
-    // Background Playback Configuration
     final audioContext = AudioContext(
-      iOS: AudioContextIOS(
-        category: AVAudioSessionCategory.playback,
-        options: const {}, // Empty to prevent crash
-      ),
+      iOS: AudioContextIOS(category: AVAudioSessionCategory.playback, options: const {}),
       android: AudioContextAndroid(
         isSpeakerphoneOn: true,
         stayAwake: true,
@@ -90,12 +79,10 @@ class _ReadingScreenState extends State<ReadingScreen> {
     );
     await AudioPlayer.global.setAudioContext(audioContext);
 
-    // Listen to state changes (playing, paused, stopped)
     _playerStateSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
       if (mounted) setState(() => _playerState = state);
     });
 
-    // Listen for when an Ayah finishes to play the next one
     _playerCompleteSubscription = _audioPlayer.onPlayerComplete.listen((event) {
       _playNextAyah();
     });
@@ -103,10 +90,8 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
   @override
   void dispose() {
-    // Dispose controllers if they were initialized
     try { _mushafController.dispose(); } catch(e) {}
     try { _translationController.dispose(); } catch(e) {}
-    
     _hideTimer?.cancel();
     _playerCompleteSubscription?.cancel();
     _playerStateSubscription?.cancel();
@@ -117,7 +102,6 @@ class _ReadingScreenState extends State<ReadingScreen> {
   void _startHideTimer() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 5), () {
-      // Only hide controls if audio is NOT playing
       if (mounted && _playerState != PlayerState.playing) {
         setState(() => _areControlsVisible = false);
       }
@@ -142,21 +126,17 @@ class _ReadingScreenState extends State<ReadingScreen> {
     _isTranslationMode = savedMode;
 
     if (_isTranslationMode) {
-      // If starting in Translation Mode, calculate sync data
-      // Use 'quran' package to find which Surah is on this Page
+      // ✅ FIX: Use 'quran' package to find the correct Surah for this page
       var pageData = quran.getPageData(initialPage);
-      int surahNum = pageData[0]['surah'];
+      int surahNum = pageData[0]['surah']; // e.g. Page 3 returns Surah 2
       int startAyah = pageData[0]['start'];
 
       _currentSurahIndex = surahNum - 1;
       _targetAyahToScroll = startAyah;
       
       _translationController = PageController(initialPage: _currentSurahIndex);
-      _pageController = _translationController;
     } else {
-      // If starting in Mushaf Mode
       _mushafController = PageController(initialPage: _currentPageIndex);
-      _pageController = _mushafController;
     }
     
     setState(() {});
@@ -175,13 +155,12 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
   void _onPageChanged(int index) {
     if (_isTranslationMode) {
-      // User swiped horizontally in Translation Mode (Changed Surah)
+      // Index = Surah Index
       setState(() => _currentSurahIndex = index);
-      // Save progress: we save the first page of this Surah
       int page = quran.getPageNumber(index + 1, 1);
       _progressService.saveLastReadPage(page);
     } else {
-      // User swiped horizontally in Mushaf Mode (Changed Page)
+      // Index = Page Index
       setState(() => _currentPageIndex = index);
       _progressService.saveLastReadPage(index + 1);
     }
@@ -190,37 +169,30 @@ class _ReadingScreenState extends State<ReadingScreen> {
   void _toggleTranslationMode() {
     setState(() {
       if (_isTranslationMode) {
-        // --- SWITCHING: TRANSLATION -> MUSHAF ---
-        // 1. Where was the user reading?
+        // --- TRANSLATION -> MUSHAF ---
         int currentSurah = _currentSurahIndex + 1;
         int currentAyah = _currentVisibleAyahInTranslation; 
         
-        // 2. Calculate the exact Page Number for this Ayah
+        // Calculate exact page for the ayah currently visible
         int targetPage = quran.getPageNumber(currentSurah, currentAyah);
         
-        // 3. Initialize Mushaf Controller to this page
         _currentPageIndex = targetPage - 1;
         _mushafController = PageController(initialPage: _currentPageIndex);
-        _pageController = _mushafController;
         _isTranslationMode = false;
         
       } else {
-        // --- SWITCHING: MUSHAF -> TRANSLATION ---
-        // 1. What is the current page?
+        // --- MUSHAF -> TRANSLATION ---
         int currentPage = _currentPageIndex + 1;
         
-        // 2. Get the first Ayah on this page
+        // ✅ FIX: Get the exact Surah and Ayah starting on this page
         var pageData = quran.getPageData(currentPage);
-        // pageData returns a list of Surahs on this page. We take the first one.
         int targetSurah = pageData[0]['surah'];
         int targetAyah = pageData[0]['start'];
         
         _currentSurahIndex = targetSurah - 1;
-        _targetAyahToScroll = targetAyah; // Important: tells the view where to scroll
+        _targetAyahToScroll = targetAyah; 
         
-        // 3. Initialize Translation Controller to this Surah
         _translationController = PageController(initialPage: _currentSurahIndex);
-        _pageController = _translationController;
         _isTranslationMode = true;
       }
       _progressService.saveReadingMode(_isTranslationMode);
@@ -235,29 +207,29 @@ class _ReadingScreenState extends State<ReadingScreen> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => _NavigationSheet(
-        // Pass the list from your Data File
-        surahList: QuranData.allSurahs, 
+        // Use imported data
+        surahList: QuranData.allSurahs,
         juzList: _juzList,
         onPageSelected: (pageOrSurahInfo) {
           Navigator.pop(context);
           if (_isTranslationMode) {
-             // Logic: If in Translation mode, we need to know which Surah the user picked
-             // NOTE: QuranData.allSurahs has 'page' info.
-             // If user picked a Surah via search, calculate the Surah Index.
-             // If input is just a Page Number (from Juz list), calculate Surah.
-             
-             int page = pageOrSurahInfo; // Assumes input is Page Number
+             // In Translation mode, calculate Surah from the selected Page
+             int page = pageOrSurahInfo;
              var pageData = quran.getPageData(page);
              int surahNum = pageData[0]['surah'];
              int startAyah = pageData[0]['start'];
              
-             _currentSurahIndex = surahNum - 1;
-             _targetAyahToScroll = startAyah;
-             
+             setState(() {
+               _currentSurahIndex = surahNum - 1;
+               _targetAyahToScroll = startAyah;
+             });
              _translationController.jumpToPage(_currentSurahIndex);
           } else {
-             // In Mushaf mode, just jump to the page
-             _mushafController.jumpToPage(pageOrSurahInfo - 1);
+             // Mushaf mode
+             setState(() {
+               _currentPageIndex = pageOrSurahInfo - 1;
+             });
+             _mushafController.jumpToPage(_currentPageIndex);
           }
           _startHideTimer();
         },
@@ -265,7 +237,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
     );
   }
 
-  // --- AUDIO LOGIC (Robust) ---
+  // --- AUDIO LOGIC ---
   Future<void> _playAyah(int surahNumber, int ayahNumber) async {
     setState(() {
       _isAudioLoading = true;
@@ -276,7 +248,6 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
     String? url;
     int attempts = 0;
-    // Retry logic to handle background network wake-up
     while (attempts < 3) {
       url = await _api.getAyahAudioUrl(surahNumber, ayahNumber);
       if (url != null) break;
@@ -300,33 +271,21 @@ class _ReadingScreenState extends State<ReadingScreen> {
 
   void _pauseAudio() async => await _audioPlayer.pause();
   void _resumeAudio() async => await _audioPlayer.resume();
-  
   void _stopAudio() async {
     await _audioPlayer.stop();
-    if (mounted) {
-      setState(() {
-        _playingSurah = null;
-        _playingAyah = null;
-      });
-    }
+    if (mounted) setState(() { _playingSurah = null; _playingAyah = null; });
   }
 
   void _playNextAyah() {
     if (_playingSurah == null || _playingAyah == null) return;
-    
-    // Get total ayahs in current surah
     int totalAyahs = quran.getVerseCount(_playingSurah!);
-    
     if (_playingAyah! < totalAyahs) {
-      // Play next ayah in same surah
       _playAyah(_playingSurah!, _playingAyah! + 1);
     } else {
-      // End of surah
       _stopAudio();
     }
   }
 
-  // --- BOOKMARK LOGIC ---
   bool _isBookmarked(String surah, int ayah) => _bookmarkedAyahs.contains("$surah:$ayah");
 
   Future<void> _toggleBookmark(String surah, int ayahNum) async {
@@ -335,18 +294,13 @@ class _ReadingScreenState extends State<ReadingScreen> {
     final key = "$surah:$ayahNum";
 
     if (_isBookmarked(surah, ayahNum)) {
-      savedList.removeWhere((e) {
-        final map = jsonDecode(e);
-        return map['surah'] == surah && map['ayah'] == ayahNum;
-      });
+      savedList.removeWhere((e) => jsonDecode(e)['surah'] == surah && jsonDecode(e)['ayah'] == ayahNum);
       setState(() => _bookmarkedAyahs.remove(key));
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Bookmark Removed")));
     } else {
       Map<String, dynamic> newBookmark = {
-        'surah': surah,
-        'ayah': ayahNum,
-        'page': _currentPageIndex + 1,
-        'timestamp': DateTime.now().toIso8601String(),
+        'surah': surah, 'ayah': ayahNum,
+        'page': _currentPageIndex + 1, 'timestamp': DateTime.now().toIso8601String(),
       };
       savedList.add(jsonEncode(newBookmark));
       setState(() => _bookmarkedAyahs.add(key));
@@ -358,36 +312,32 @@ class _ReadingScreenState extends State<ReadingScreen> {
   void _showAyahMenu(int surahNumber, String surahName, String text, int ayahNum) {
     _hideTimer?.cancel();
     final isBookmarked = _isBookmarked(surahName, ayahNum);
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-              ListTile(
-                leading: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accentGreen, size: 32),
-                title: const Text("Recite from here", style: TextStyle(fontWeight: FontWeight.bold)),
-                onTap: () { Navigator.pop(context); _playAyah(surahNumber, ayahNum); },
-              ),
-              const Divider(),
-              ListTile(
-                leading: Icon(isBookmarked ? Icons.bookmark_remove : Icons.bookmark_add, color: AppColors.gold),
-                title: Text(isBookmarked ? "Remove Bookmark" : "Bookmark Ayah"),
-                onTap: () { Navigator.pop(context); _toggleBookmark(surahName, ayahNum); _startHideTimer(); },
-              ),
-              ListTile(
-                leading: const Icon(Icons.copy, color: AppColors.primaryText),
-                title: const Text("Copy Ayah Text"),
-                onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(context); _startHideTimer(); },
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+            ListTile(
+              leading: const Icon(Icons.play_circle_fill_rounded, color: AppColors.accentGreen, size: 32),
+              title: const Text("Recite from here", style: TextStyle(fontWeight: FontWeight.bold)),
+              onTap: () { Navigator.pop(context); _playAyah(surahNumber, ayahNum); },
+            ),
+            const Divider(),
+            ListTile(
+              leading: Icon(isBookmarked ? Icons.bookmark_remove : Icons.bookmark_add, color: AppColors.gold),
+              title: Text(isBookmarked ? "Remove Bookmark" : "Bookmark Ayah"),
+              onTap: () { Navigator.pop(context); _toggleBookmark(surahName, ayahNum); _startHideTimer(); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.copy, color: AppColors.primaryText),
+              title: const Text("Copy Ayah Text"),
+              onTap: () { Clipboard.setData(ClipboardData(text: text)); Navigator.pop(context); _startHideTimer(); },
+            ),
+            const SizedBox(height: 10),
+          ]),
         );
       },
     );
@@ -397,30 +347,26 @@ class _ReadingScreenState extends State<ReadingScreen> {
   Widget build(BuildContext context) {
     final isPlayingOrPaused = _playerState == PlayerState.playing || _playerState == PlayerState.paused || _isAudioLoading;
 
-    // BUILD BODY CONTENT BASED ON MODE
     Widget bodyContent;
     if (_isTranslationMode) {
       bodyContent = PageView.builder(
         controller: _translationController,
-        itemCount: 114, // 114 Surahs
+        itemCount: 114,
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
           int surahNum = index + 1;
           return _TranslationSurahLoader(
             surahNumber: surahNum,
-            initialAyahScroll: _targetAyahToScroll, // Sync Target
+            initialAyahScroll: _targetAyahToScroll,
             onTapContent: _toggleControls,
-            onVisibleAyahChanged: (ayah) {
-              // Update Sync Source
-              _currentVisibleAyahInTranslation = ayah;
-            },
+            onVisibleAyahChanged: (ayah) => _currentVisibleAyahInTranslation = ayah,
           );
         },
       );
     } else {
       bodyContent = PageView.builder(
         controller: _mushafController,
-        itemCount: 604, // 604 Pages
+        itemCount: 604,
         onPageChanged: _onPageChanged,
         itemBuilder: (context, index) {
           return _MushafPageLoader(
@@ -439,10 +385,7 @@ class _ReadingScreenState extends State<ReadingScreen> {
         value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.dark),
         child: Stack(
           children: [
-            Directionality(
-              textDirection: TextDirection.rtl,
-              child: bodyContent,
-            ),
+            Directionality(textDirection: TextDirection.rtl, child: bodyContent),
             
             // CONTROLS OVERLAY
             AnimatedOpacity(
@@ -455,34 +398,10 @@ class _ReadingScreenState extends State<ReadingScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: Stack(
                       children: [
-                        // BACK BUTTON
-                        Positioned(
-                          top: 0, left: 0,
-                          child: _GlassButton(
-                            icon: Icons.arrow_back_ios_new_rounded, label: "Back",
-                            onTap: () => Navigator.pop(context, true),
-                          ),
-                        ),
-                        // NAVIGATION BUTTON
-                        Positioned(
-                          top: 0, right: 0,
-                          child: _GlassButton(
-                            icon: Icons.grid_view_rounded, label: "Navigate",
-                            onTap: _showNavigationSheet,
-                          ),
-                        ),
-                        
-                        // TRANSLATE TOGGLE (Only shown if audio player isn't covering bottom)
+                        Positioned(top: 0, left: 0, child: _GlassButton(icon: Icons.arrow_back_ios_new_rounded, label: "Back", onTap: () => Navigator.pop(context, true))),
+                        Positioned(top: 0, right: 0, child: _GlassButton(icon: Icons.grid_view_rounded, label: "Navigate", onTap: _showNavigationSheet)),
                         if (!isPlayingOrPaused)
-                          Positioned(
-                            bottom: 20, left: 0, right: 0,
-                            child: Center(
-                              child: _TranslateToggle(
-                                isActive: _isTranslationMode,
-                                onTap: _toggleTranslationMode,
-                              ),
-                            ),
-                          ),
+                          Positioned(bottom: 20, left: 0, right: 0, child: Center(child: _TranslateToggle(isActive: _isTranslationMode, onTap: _toggleTranslationMode))),
                       ],
                     ),
                   ),
@@ -490,59 +409,23 @@ class _ReadingScreenState extends State<ReadingScreen> {
               ),
             ),
 
-            // AUDIO PLAYER BOTTOM PANEL
+            // AUDIO PLAYER PANEL
             if (isPlayingOrPaused)
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 30),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, -5))],
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, -5))]),
                   child: Row(
                     children: [
-                      // INFO
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text("Reciting Surah $_playingSurah", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                            Text("Ayah $_playingAyah", style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                      // CONTROLS
-                      if (_isAudioLoading)
-                        const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentGreen))
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text("Reciting Surah $_playingSurah", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)), Text("Ayah $_playingAyah", style: const TextStyle(color: Colors.grey, fontSize: 12))])),
+                      if (_isAudioLoading) const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accentGreen))
                       else ...[
-                        // STOP
-                        IconButton(
-                          icon: const Icon(Icons.stop_rounded, color: Colors.red),
-                          onPressed: _stopAudio,
-                        ),
+                        IconButton(icon: const Icon(Icons.stop_rounded, color: Colors.red), onPressed: _stopAudio),
                         const SizedBox(width: 10),
-                        // PLAY/PAUSE
-                        Container(
-                          decoration: const BoxDecoration(color: AppColors.accentGreen, shape: BoxShape.circle),
-                          child: IconButton(
-                            icon: Icon(_playerState == PlayerState.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
-                            onPressed: () {
-                              if (_playerState == PlayerState.playing) {
-                                _pauseAudio();
-                              } else {
-                                _resumeAudio();
-                              }
-                            },
-                          ),
-                        ),
+                        Container(decoration: const BoxDecoration(color: AppColors.accentGreen, shape: BoxShape.circle), child: IconButton(icon: Icon(_playerState == PlayerState.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white), onPressed: () => _playerState == PlayerState.playing ? _pauseAudio() : _resumeAudio())),
                         const SizedBox(width: 10),
-                        // NEXT
-                        IconButton(
-                          icon: const Icon(Icons.skip_next_rounded, color: AppColors.primaryText),
-                          onPressed: _playNextAyah,
-                        ),
+                        IconButton(icon: const Icon(Icons.skip_next_rounded, color: AppColors.primaryText), onPressed: _playNextAyah),
                       ]
                     ],
                   ),
@@ -563,12 +446,7 @@ class _MushafPageLoader extends StatefulWidget {
   final Function(int, String, String, int) onLongPressAyah;
   final int? currentPlayingAyah;
 
-  const _MushafPageLoader({
-    required this.pageNumber,
-    required this.onTapContent,
-    required this.onLongPressAyah,
-    this.currentPlayingAyah,
-  });
+  const _MushafPageLoader({required this.pageNumber, required this.onTapContent, required this.onLongPressAyah, this.currentPlayingAyah});
 
   @override
   State<_MushafPageLoader> createState() => _MushafPageLoaderState();
@@ -593,21 +471,12 @@ class _MushafPageLoaderState extends State<_MushafPageLoader> with AutomaticKeep
     return FutureBuilder<QuranPageResponse>(
       future: _pageFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.gold));
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.gold));
+        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
         return GestureDetector(
           onTap: widget.onTapContent,
           behavior: HitTestBehavior.translucent,
-          child: _MushafPageView(
-            pageData: snapshot.data!.data,
-            onLongPress: widget.onLongPressAyah,
-            highlightAyah: widget.currentPlayingAyah,
-          ),
+          child: _MushafPageView(pageData: snapshot.data!.data, onLongPress: widget.onLongPressAyah, highlightAyah: widget.currentPlayingAyah),
         );
       },
     );
@@ -620,12 +489,7 @@ class _TranslationSurahLoader extends StatefulWidget {
   final VoidCallback onTapContent;
   final Function(int) onVisibleAyahChanged;
 
-  const _TranslationSurahLoader({
-    required this.surahNumber,
-    required this.initialAyahScroll,
-    required this.onTapContent,
-    required this.onVisibleAyahChanged,
-  });
+  const _TranslationSurahLoader({required this.surahNumber, required this.initialAyahScroll, required this.onTapContent, required this.onVisibleAyahChanged});
 
   @override
   State<_TranslationSurahLoader> createState() => _TranslationSurahLoaderState();
@@ -650,20 +514,11 @@ class _TranslationSurahLoaderState extends State<_TranslationSurahLoader> with A
     return FutureBuilder<List<QuranSurah>>(
       future: _surahFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: AppColors.gold));
-        }
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
+        if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.gold));
+        if (snapshot.hasError) return Center(child: Text('Error: ${snapshot.error}'));
         return GestureDetector(
           onTap: widget.onTapContent,
-          child: _TranslationSurahView(
-            surahs: snapshot.data!,
-            initialAyah: widget.initialAyahScroll,
-            onVisibleAyahChanged: widget.onVisibleAyahChanged,
-          ),
+          child: _TranslationSurahView(surahs: snapshot.data!, initialAyah: widget.initialAyahScroll, onVisibleAyahChanged: widget.onVisibleAyahChanged),
         );
       },
     );
@@ -690,26 +545,18 @@ class _TranslationSurahViewState extends State<_TranslationSurahView> {
   @override
   void initState() {
     super.initState();
-    // Scroll to specific ayah (if not start of surah)
     if (widget.initialAyah > 1) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        // Index mapping: 0 is Header. Ayah 1 is Index 1. 
-        // So target index = ayahNumber.
-        try {
-          _itemScrollController.jumpTo(index: widget.initialAyah);
-        } catch(e) {
-          print("Scroll Error: $e");
-        }
+        // Index mapping: 0 is Header. Ayah 1 is Index 1.
+        try { _itemScrollController.jumpTo(index: widget.initialAyah); } catch(e) {}
       });
     }
-
     _itemPositionsListener.itemPositions.addListener(() {
       final positions = _itemPositionsListener.itemPositions.value;
       if (positions.isNotEmpty) {
-        // Find top-most visible item
-        final first = positions.first.index;
-        // Mapping back: Index 0 is Header (Count as Ayah 1). Index 1 is Ayah 1.
-        int visibleAyah = first == 0 ? 1 : first;
+        final firstIndex = positions.first.index;
+        // Map Index 0 -> Ayah 1 (Header), Index 1 -> Ayah 1.
+        int visibleAyah = firstIndex == 0 ? 1 : firstIndex;
         widget.onVisibleAyahChanged(visibleAyah);
       }
     });
@@ -724,64 +571,28 @@ class _TranslationSurahViewState extends State<_TranslationSurahView> {
       itemScrollController: _itemScrollController,
       itemPositionsListener: _itemPositionsListener,
       padding: const EdgeInsets.fromLTRB(16, 80, 16, 100),
-      itemCount: arabicSurah.ayahs.length + 1, // Header + Ayahs
+      itemCount: arabicSurah.ayahs.length + 1,
       itemBuilder: (context, index) {
         if (index == 0) {
-          // HEADER
           return Container(
             padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Column(
-              children: [
-                Text(arabicSurah.name, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 28, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(arabicSurah.englishName, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-              ],
-            ),
+            child: Column(children: [
+              Text(arabicSurah.name, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 28, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(arabicSurah.englishName, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            ]),
           );
         }
-
-        final i = index - 1; // Ayah Index in Data
+        final i = index - 1;
         return Padding(
           padding: const EdgeInsets.only(bottom: 30),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ARABIC
-              Align(
-                alignment: Alignment.centerRight,
-                child: RichText(
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.right,
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontFamily: 'UthmanicHafs', 
-                      fontSize: 26, 
-                      color: Colors.black,
-                      height: 1.6
-                    ),
-                    children: [
-                      TextSpan(text: arabicSurah.ayahs[i].text + " "),
-                      WidgetSpan(
-                        alignment: PlaceholderAlignment.middle,
-                        child: _AyahEndSymbol(number: arabicSurah.ayahs[i].numberInSurah),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              // ENGLISH
-              Directionality(
-                textDirection: TextDirection.ltr,
-                child: Text(
-                  "${englishSurah.ayahs[i].numberInSurah}. ${englishSurah.ayahs[i].text}", 
-                  style: const TextStyle(fontSize: 17, height: 1.5, color: AppColors.primaryText),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Divider(color: Colors.grey, thickness: 0.5),
-            ],
-          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Align(alignment: Alignment.centerRight, child: RichText(textDirection: TextDirection.rtl, textAlign: TextAlign.right, text: TextSpan(style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 26, color: Colors.black, height: 1.6), children: [TextSpan(text: arabicSurah.ayahs[i].text + " "), WidgetSpan(alignment: PlaceholderAlignment.middle, child: _AyahEndSymbol(number: arabicSurah.ayahs[i].numberInSurah))]))),
+            const SizedBox(height: 16),
+            Directionality(textDirection: TextDirection.ltr, child: Text("${englishSurah.ayahs[i].numberInSurah}. ${englishSurah.ayahs[i].text}", style: const TextStyle(fontSize: 17, height: 1.5, color: AppColors.primaryText))),
+            const SizedBox(height: 16),
+            const Divider(color: Colors.grey, thickness: 0.5),
+          ]),
         );
       },
     );
@@ -792,367 +603,76 @@ class _MushafPageView extends StatelessWidget {
   final QuranPageData pageData;
   final Function(int, String, String, int) onLongPress;
   final int? highlightAyah;
-
   const _MushafPageView({required this.pageData, required this.onLongPress, this.highlightAyah});
-
   @override
   Widget build(BuildContext context) {
-    String pageSurahName = "";
-    int pageJuz = 0;
-
-    if (pageData.ayahs.isNotEmpty) {
-      final firstAyah = pageData.ayahs.first;
-      pageSurahName = firstAyah.surahName;
-      pageJuz = firstAyah.juz;
-    }
-
+    String pageSurahName = ""; int pageJuz = 0;
+    if (pageData.ayahs.isNotEmpty) { pageSurahName = pageData.ayahs.first.surahName; pageJuz = pageData.ayahs.first.juz; }
     List<Widget> contentWidgets = [];
     if (pageData.ayahs.isEmpty) return const SizedBox();
-
-    String currentSurah = "";
-    List<InlineSpan> currentSpans = [];
-
-    const quranTextStyle = TextStyle(
-      fontFamily: 'UthmanicHafs', 
-      fontSize: 24, 
-      color: Colors.black,
-      height: 1.7,
-    );
-
-    void flushSpans() {
-      if (currentSpans.isNotEmpty) {
-        contentWidgets.add(
-          RichText(
-            textAlign: TextAlign.justify,
-            textDirection: TextDirection.rtl,
-            text: TextSpan(
-              style: quranTextStyle,
-              children: List.from(currentSpans),
-            ),
-          ),
-        );
-        currentSpans.clear();
-      }
-    }
-
+    String currentSurah = ""; List<InlineSpan> currentSpans = [];
+    const quranTextStyle = TextStyle(fontFamily: 'UthmanicHafs', fontSize: 24, color: Colors.black, height: 1.7);
+    void flushSpans() { if (currentSpans.isNotEmpty) { contentWidgets.add(RichText(textAlign: TextAlign.justify, textDirection: TextDirection.rtl, text: TextSpan(style: quranTextStyle, children: List.from(currentSpans)))); currentSpans.clear(); } }
     for (var ayah in pageData.ayahs) {
       if (ayah.numberInSurah == 1) {
-        flushSpans();
-        currentSurah = ayah.surahName;
-        contentWidgets.add(_SurahHeader(surahName: currentSurah));
-        contentWidgets.add(const SizedBox(height: 8));
-        
-        if (ayah.surahNumber != 9) {
-           contentWidgets.add(
-             const Text(
-               "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ",
-               textAlign: TextAlign.center,
-               style: TextStyle(fontFamily: 'UthmanicHafs', fontSize: 22, color: AppColors.primaryText),
-             )
-           );
-           contentWidgets.add(const SizedBox(height: 12));
-        }
+        flushSpans(); currentSurah = ayah.surahName; contentWidgets.add(_SurahHeader(surahName: currentSurah)); contentWidgets.add(const SizedBox(height: 8));
+        if (ayah.surahNumber != 9) { contentWidgets.add(const Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'UthmanicHafs', fontSize: 22, color: AppColors.primaryText))); contentWidgets.add(const SizedBox(height: 12)); }
       }
-
       String displayText = ayah.text;
-      if (ayah.numberInSurah == 1 && ayah.surahNumber != 1 && ayah.surahNumber != 9) {
-        const bismillah = "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ";
-        if (displayText.startsWith(bismillah)) {
-          displayText = displayText.substring(bismillah.length).trim();
-        } else {
-           if (displayText.length > 20 && displayText.contains("ٱلرَّحِيمِ")) {
-              displayText = displayText.replaceFirst(RegExp(r'^.*?ٱلرَّحِيمِ\s*'), '');
-           }
-        }
-      }
-
+      if (ayah.numberInSurah == 1 && ayah.surahNumber != 1 && ayah.surahNumber != 9) { if (displayText.startsWith("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")) { displayText = displayText.substring("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ".length).trim(); } }
       final isPlaying = highlightAyah == ayah.numberInSurah;
-
-      currentSpans.add(
-        TextSpan(
-          text: "$displayText ",
-          style: isPlaying ? const TextStyle(color: AppColors.accentGreen, fontFamily: 'UthmanicHafs', fontSize: 24, height: 1.7) : null,
-          recognizer: LongPressGestureRecognizer()
-            ..onLongPress = () {
-              HapticFeedback.mediumImpact();
-              onLongPress(ayah.surahNumber, currentSurah.isEmpty ? pageSurahName : currentSurah, ayah.text, ayah.numberInSurah);
-            },
-        ),
-      );
-      
-      currentSpans.add(
-        WidgetSpan(
-          alignment: PlaceholderAlignment.middle,
-          child: _AyahEndSymbol(number: ayah.numberInSurah),
-        ),
-      );
+      currentSpans.add(TextSpan(text: "$displayText ", style: isPlaying ? const TextStyle(color: AppColors.accentGreen, fontFamily: 'UthmanicHafs', fontSize: 24, height: 1.7) : null, recognizer: LongPressGestureRecognizer()..onLongPress = () { HapticFeedback.mediumImpact(); onLongPress(ayah.surahNumber, currentSurah.isEmpty ? pageSurahName : currentSurah, ayah.text, ayah.numberInSurah); }));
+      currentSpans.add(WidgetSpan(alignment: PlaceholderAlignment.middle, child: _AyahEndSymbol(number: ayah.numberInSurah)));
       currentSpans.add(const TextSpan(text: "  "));
     }
-    
     flushSpans();
-
-    return Center(
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.topCenter,
-        child: Container(
-          width: MediaQuery.of(context).size.width,
-          padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      pageSurahName,
-                      style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      "Juz $pageJuz",
-                      style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 14, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-              ...contentWidgets,
-              const SizedBox(height: 20),
-              Text(
-                "${pageData.number}", 
-                textAlign: TextAlign.center, 
-                style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 14, color: Colors.grey)
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return Center(child: FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.topCenter, child: Container(width: MediaQuery.of(context).size.width, padding: const EdgeInsets.fromLTRB(20, 10, 20, 24), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [Padding(padding: const EdgeInsets.only(bottom: 16.0), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(pageSurahName, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 16, fontWeight: FontWeight.bold)), Text("Juz $pageJuz", style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 14, color: Colors.grey))])), ...contentWidgets, const SizedBox(height: 20), Text("${pageData.number}", textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 14, color: Colors.grey))]))));
   }
 }
 
 class _AyahEndSymbol extends StatelessWidget {
   final int number;
   const _AyahEndSymbol({required this.number});
-
-  String _toArabic(int num) {
-    const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
-    return num.toString().split('').map((d) => arabicDigits[int.parse(d)]).join();
-  }
-
+  String _toArabic(int num) { const arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩']; return num.toString().split('').map((d) => arabicDigits[int.parse(d)]).join(); }
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      width: 40,
-      height: 40,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Text(
-            '\u06DD',
-            style: TextStyle(
-              fontFamily: 'UthmanicHafs',
-              fontSize: 34,
-              color: AppColors.gold,
-              height: 1.0, 
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4), 
-            child: Directionality(
-              textDirection: TextDirection.ltr, 
-              child: Text(
-                _toArabic(number),
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.black,
-                  height: 1.0,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) { return Container(margin: const EdgeInsets.symmetric(horizontal: 4), width: 40, height: 40, child: Stack(alignment: Alignment.center, children: [const Text('\u06DD', style: TextStyle(fontFamily: 'UthmanicHafs', fontSize: 34, color: AppColors.gold, height: 1.0)), Padding(padding: const EdgeInsets.only(top: 4), child: Directionality(textDirection: TextDirection.ltr, child: Text(_toArabic(number), textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.black, height: 1.0))))])); }
 }
 
 class _SurahHeader extends StatelessWidget {
   final String surahName;
   const _SurahHeader({required this.surahName});
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFE6E0C6),
-        border: Border.symmetric(horizontal: BorderSide(color: AppColors.gold, width: 2)),
-      ),
-      child: Text(
-        surahName,
-        textAlign: TextAlign.center,
-        style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 22, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
+  Widget build(BuildContext context) { return Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 8), decoration: BoxDecoration(color: const Color(0xFFE6E0C6), border: Border.symmetric(horizontal: BorderSide(color: AppColors.gold, width: 2))), child: Text(surahName, textAlign: TextAlign.center, style: const TextStyle(fontFamily: 'UthmanicHafs', fontSize: 22, fontWeight: FontWeight.bold))); }
 }
 
 class _GlassButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
+  final IconData icon; final String label; final VoidCallback onTap;
   const _GlassButton({required this.icon, required this.label, required this.onTap});
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]),
-        child: Row(children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))
-        ]),
-      ),
-    );
-  }
+  Widget build(BuildContext context) { return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: Row(children: [Icon(icon, size: 18), const SizedBox(width: 4), Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold))]))); }
 }
 
 class _TranslateToggle extends StatelessWidget {
-  final bool isActive;
-  final VoidCallback onTap;
+  final bool isActive; final VoidCallback onTap;
   const _TranslateToggle({required this.isActive, required this.onTap});
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.accentGreen : Colors.white,
-          borderRadius: BorderRadius.circular(30),
-          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.translate, size: 18, color: isActive ? Colors.white : Colors.black),
-            const SizedBox(width: 8),
-            Text(isActive ? "Translation ON" : "Translate",
-                style: TextStyle(color: isActive ? Colors.white : Colors.black, fontWeight: FontWeight.bold)),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) { return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), decoration: BoxDecoration(color: isActive ? AppColors.accentGreen : Colors.white, borderRadius: BorderRadius.circular(30), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)]), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.translate, size: 18, color: isActive ? Colors.white : Colors.black), const SizedBox(width: 8), Text(isActive ? "Translation ON" : "Translate", style: TextStyle(color: isActive ? Colors.white : Colors.black, fontWeight: FontWeight.bold))]))); }
 }
 
 class _NavigationSheet extends StatefulWidget {
-  final List<Map<String, dynamic>> surahList;
-  final List<int> juzList;
-  final Function(int) onPageSelected;
-
+  final List<Map<String, dynamic>> surahList; final List<int> juzList; final Function(int) onPageSelected;
   const _NavigationSheet({required this.surahList, required this.juzList, required this.onPageSelected});
-
   @override
   State<_NavigationSheet> createState() => _NavigationSheetState();
 }
 
 class _NavigationSheetState extends State<_NavigationSheet> {
   String _searchQuery = "";
-
   @override
   Widget build(BuildContext context) {
-    // Filter Surahs based on search query
     final filteredSurahs = widget.surahList.where((s) {
-      final name = s['name'].toString().toLowerCase();
-      final english = s['english'].toString().toLowerCase();
-      final transliteration = s['transliteration'].toString().toLowerCase();
-      final number = s['number'].toString();
-      final q = _searchQuery.toLowerCase();
-      
-      return name.contains(q) || 
-             english.contains(q) || 
-             transliteration.contains(q) || 
-             number.contains(q);
+      final name = s['name'].toString().toLowerCase(); final english = s['english'].toString().toLowerCase(); final number = s['number'].toString(); final q = _searchQuery.toLowerCase(); return name.contains(q) || english.contains(q) || number.contains(q);
     }).toList();
-
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-          color: AppColors.background, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      child: DefaultTabController(
-        length: 2,
-        child: Column(children: [
-          const SizedBox(height: 12),
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search Surah (Name or Number)',
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-              ),
-              onChanged: (val) => setState(() => _searchQuery = val),
-            ),
-          ),
-          const TabBar(tabs: [Tab(text: "Surah"), Tab(text: "Juz")], labelColor: AppColors.accentGreen),
-          Expanded(
-            child: TabBarView(children: [
-              ListView.builder(
-                itemCount: filteredSurahs.length,
-                itemBuilder: (ctx, i) {
-                  final s = filteredSurahs[i];
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: AppColors.surfaceLight,
-                      child: Text("${s['number']}", style: const TextStyle(fontSize: 12, color: AppColors.primaryText)),
-                    ),
-                    title: Text(s['transliteration'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(s['english']),
-                    trailing: Text("Page ${s['page']}", style: const TextStyle(color: Colors.grey)),
-                    onTap: () {
-                      // Navigate to Page (search metadata has page number)
-                      widget.onPageSelected(s['page']);
-                    },
-                  );
-                },
-              ),
-              GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 5, crossAxisSpacing: 10, mainAxisSpacing: 10),
-                itemCount: widget.juzList.length,
-                itemBuilder: (ctx, i) => InkWell(
-                  onTap: () => widget.onPageSelected((widget.juzList[i] - 1) * 20 + 2),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(border: Border.all(color: AppColors.gold), borderRadius: BorderRadius.circular(8)),
-                    child: Text("${widget.juzList[i]}"),
-                  ),
-                ),
-              ),
-            ]),
-          )
-        ]),
-      ),
-    );
+    return Container(height: MediaQuery.of(context).size.height * 0.85, decoration: const BoxDecoration(color: AppColors.background, borderRadius: BorderRadius.vertical(top: Radius.circular(20))), child: DefaultTabController(length: 2, child: Column(children: [const SizedBox(height: 12), Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))), Padding(padding: const EdgeInsets.all(16.0), child: TextField(decoration: InputDecoration(hintText: 'Search Surah (Name or Number)', prefixIcon: const Icon(Icons.search, color: Colors.grey), filled: true, fillColor: Colors.white, contentPadding: const EdgeInsets.symmetric(vertical: 0), border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none)), onChanged: (val) => setState(() => _searchQuery = val))), const TabBar(tabs: [Tab(text: "Surah"), Tab(text: "Juz")], labelColor: AppColors.accentGreen), Expanded(child: TabBarView(children: [ListView.builder(itemCount: filteredSurahs.length, itemBuilder: (ctx, i) { final s = filteredSurahs[i]; return ListTile(leading: CircleAvatar(backgroundColor: AppColors.surfaceLight, child: Text("${s['number']}", style: const TextStyle(fontSize: 12, color: AppColors.primaryText))), title: Text(s['transliteration'], style: const TextStyle(fontWeight: FontWeight.bold)), subtitle: Text(s['english']), trailing: Text("Page ${s['page']}", style: const TextStyle(color: Colors.grey)), onTap: () => widget.onPageSelected(s['page'])); }), GridView.builder(padding: const EdgeInsets.all(16), gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 5, crossAxisSpacing: 10, mainAxisSpacing: 10), itemCount: widget.juzList.length, itemBuilder: (ctx, i) => InkWell(onTap: () => widget.onPageSelected((widget.juzList[i] - 1) * 20 + 2), child: Container(alignment: Alignment.center, decoration: BoxDecoration(border: Border.all(color: AppColors.gold), borderRadius: BorderRadius.circular(8)), child: Text("${widget.juzList[i]}"))))]))])));
   }
 }
