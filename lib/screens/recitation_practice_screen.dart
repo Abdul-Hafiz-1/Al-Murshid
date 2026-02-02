@@ -4,7 +4,6 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:quran/quran.dart' as quran;
-import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import 'package:tarteel/theme/app_theme.dart';
 import 'package:tarteel/services/quran_page_api.dart';

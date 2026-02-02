@@ -10,8 +10,8 @@ void main() {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      statusBarBrightness: Brightness.light,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
     ),
   );
   runApp(
@@ -29,7 +29,8 @@ class AlMurshidApp extends StatelessWidget {
     return MaterialApp(
       title: 'Al-Murshid',
       theme: AppTheme.light(),
-      themeMode: ThemeMode.light, // Force light mode only
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.dark, // Use dark assistant UI
       debugShowCheckedModeBanner: false,
       home: const SplashScreen(),
     );

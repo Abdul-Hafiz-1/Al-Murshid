@@ -21,6 +21,12 @@ class AppColors {
   /// Soft black background for immersive reading
   static const Color darkBg = Color(0xFF151515);
   static const Color darkSurface = Color(0xFF1F1F1F);
+  // Assistant-style deep navy / blue palette
+  static const Color assistantBg = Color(0xFF070617);
+  static const Color assistantSurface = Color(0xFF0F1020);
+  static const Color assistantBlue = Color(0xFF2D6BFF);
+  static const Color assistantAccent = Color(0xFF4EA1FF);
+  static const Color onAssistant = Color(0xFFEFF6FF);
 }
 
 class AppTheme {
@@ -95,6 +101,46 @@ class AppTheme {
           color: Colors.white,
           fontSize: 14,
         ),
+      ),
+    );
+  }
+
+  static ThemeData dark() {
+    final base = ThemeData.dark();
+    return base.copyWith(
+      useMaterial3: true,
+      scaffoldBackgroundColor: AppColors.assistantBg,
+      colorScheme: ColorScheme.dark(
+        primary: AppColors.assistantBlue,
+        secondary: AppColors.assistantAccent,
+        background: AppColors.assistantBg,
+        surface: AppColors.assistantSurface,
+        onBackground: AppColors.onAssistant,
+        onSurface: AppColors.onAssistant,
+      ),
+      textTheme: base.textTheme.apply(fontFamily: 'Montserrat').copyWith(
+        titleLarge: const TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppColors.onAssistant,
+        ),
+        bodyMedium: const TextStyle(
+          color: AppColors.onAssistant,
+          height: 1.4,
+        ),
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        foregroundColor: AppColors.onAssistant,
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.assistantSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: AppColors.assistantBlue,
+        foregroundColor: AppColors.onAssistant,
       ),
     );
   }

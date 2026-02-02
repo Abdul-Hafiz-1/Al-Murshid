@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:tarteel/screens/home_options_screen.dart';
-import 'package:tarteel/theme/app_theme.dart';
+import 'package:tarteel/screens/assistant_home.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -44,14 +43,14 @@ class _SplashScreenState extends State<SplashScreen>
       ),
     );
 
-    Future<void>.delayed(const Duration(milliseconds: 2500), _goHome);
+    Future<void>.delayed(const Duration(milliseconds: 1800), _goHome);
   }
 
   void _goHome() {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => HomeOptionsScreen(),
+        builder: (_) => const AssistantHome(),
       ),
     );
   }
@@ -66,7 +65,16 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        color: AppColors.background,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFF06102A),
+              Color(0xFF0B1633),
+            ],
+          ),
+        ),
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -76,35 +84,30 @@ class _SplashScreenState extends State<SplashScreen>
                 child: ScaleTransition(
                   scale: _logoScale,
                   child: Container(
-                    padding: const EdgeInsets.all(22),
+                    padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.65),
                       shape: BoxShape.circle,
-                      border: Border.all(
-                        color: AppColors.gold,
-                        width: 2,
+                      gradient: RadialGradient(
+                        colors: [Color(0xFF2D6BFF), Color(0xFF183A8A)],
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
+                          color: Colors.black.withOpacity(0.45),
+                          blurRadius: 30,
+                          offset: Offset(0, 10),
                         ),
                       ],
                     ),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.accentGreen.withOpacity(0.08),
+                        color: Colors.black.withOpacity(0.05),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.accentGreen.withOpacity(0.5),
-                        ),
                       ),
-                      child: Icon(
+                      child: const Icon(
                         Icons.menu_book_rounded,
                         size: 58,
-                        color: AppColors.accentGreen,
+                        color: Color(0xFFFFFFFF),
                       ),
                     ),
                   ),
@@ -117,18 +120,18 @@ class _SplashScreenState extends State<SplashScreen>
                   children: [
                     Text(
                       'Al-Murshid',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            fontSize: 30,
-                            letterSpacing: 1.3,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryText,
-                          ),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontSize: 30,
+                          letterSpacing: 1.3,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Your companion in Quran reading & hifz',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppColors.primaryText.withOpacity(0.7),
+                            color: Colors.white70,
                           ),
                       textAlign: TextAlign.center,
                     ),
