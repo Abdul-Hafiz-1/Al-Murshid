@@ -73,3 +73,25 @@ class BookmarksNotifier extends StateNotifier<List<int>> {
 final bookmarksProvider = StateNotifierProvider<BookmarksNotifier, List<int>>((ref) {
   return BookmarksNotifier();
 });
+
+// 4. Tajweed Display Preferences
+class TajweedPreferencesNotifier extends StateNotifier<bool> {
+  TajweedPreferencesNotifier() : super(false) {
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    state = prefs.getBool('showTajweedColors') ?? false;
+  }
+
+  Future<void> toggleTajweedDisplay() async {
+    state = !state;
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setBool('showTajweedColors', state);
+  }
+}
+
+final tajweedPreferencesProvider = StateNotifierProvider<TajweedPreferencesNotifier, bool>((ref) {
+  return TajweedPreferencesNotifier();
+});

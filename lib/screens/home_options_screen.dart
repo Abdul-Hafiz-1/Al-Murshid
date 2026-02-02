@@ -6,6 +6,8 @@ import 'package:tarteel/screens/reading_screen.dart';
 import 'package:tarteel/screens/settings_screen.dart';
 import 'package:tarteel/services/reading_progress_service.dart';
 import 'package:tarteel/theme/app_theme.dart';
+// 👇 Import the practice screen
+import 'package:tarteel/screens/recitation_practice_screen.dart';
 
 class HomeOptionsScreen extends StatefulWidget {
   const HomeOptionsScreen({super.key});
@@ -33,7 +35,7 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
     Future<void>.delayed(const Duration(seconds: 3), _rotateGreeting);
   }
   
-  // NEW: Load real bookmarks from storage
+  // Load real bookmarks from storage
   Future<void> _loadBookmarks() async {
     final prefs = await SharedPreferences.getInstance();
     final savedList = prefs.getStringList('bookmarked_ayahs_list') ?? [];
@@ -75,6 +77,18 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
      Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => const SettingsScreen(),
+      ),
+    );
+  }
+
+  // ✅ CORRECTED NAVIGATION FUNCTION
+  void _openRecitationPractice() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const RecitationPracticeScreen(
+          initialSurah: 1, // Start with Fatiha
+          initialAyah: 1,
+        ),
       ),
     );
   }
@@ -231,7 +245,7 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
                                   title: 'Recitation Practice',
                                   subtitle: 'Listen, repeat, and refine',
                                   icon: Icons.mic_none_rounded,
-                                  onTap: () => _showComingSoon('Coming soon...'),
+                                  onTap: _openRecitationPractice, // ✅ UPDATED
                                 ),
                                 const SizedBox(height: 12),
                                 _CardTile(
@@ -261,7 +275,7 @@ class _HomeOptionsScreenState extends State<HomeOptionsScreen> {
   }
 }
 
-// ... _LastReadCard class (Same as before) ...
+// ... _LastReadCard class
 class _LastReadCard extends StatelessWidget {
   const _LastReadCard({
     required this.title,
@@ -508,7 +522,6 @@ class _BookmarksStackState extends State<_BookmarksStack> {
   }
 }
 
-// ... _CardTile class (Same as before) ...
 class _CardTile extends StatelessWidget {
   const _CardTile({
     required this.title,
